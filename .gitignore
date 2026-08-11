@@ -1,0 +1,6 @@
+.env
+google-service-account*.json
+crm.sqlite
+crm-export.json
+node_modules/
+dist/

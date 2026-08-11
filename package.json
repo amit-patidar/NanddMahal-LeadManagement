@@ -1,0 +1,32 @@
+{
+  "name": "lead-management-system",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24.0.0"
+  },
+  "scripts": {
+    "dev": "concurrently \"npm run server\" \"npm run client\"",
+    "client": "vite --host 0.0.0.0",
+    "server": "node --experimental-sqlite --import dotenv/config server/server.js",
+    "start": "node --experimental-sqlite server/server.js",
+    "build": "vite build",
+    "render-build": "npm install && npm run build",
+    "export:data": "node --experimental-sqlite --import dotenv/config scripts/export-data.js",
+    "import:data": "node --experimental-sqlite --import dotenv/config scripts/import-data.js",
+    "preview": "vite preview --host 0.0.0.0"
+  },
+  "dependencies": {
+    "@vitejs/plugin-react": "^5.0.0",
+    "concurrently": "^9.2.0",
+    "dotenv": "^17.4.2",
+    "googleapis": "^156.0.0",
+    "lucide-react": "^0.539.0",
+    "pg": "^8.23.0",
+    "react": "^19.1.1",
+    "react-dom": "^19.1.1",
+    "typescript": "^5.9.2",
+    "vite": "^7.1.1"
+  }
+}
