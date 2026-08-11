@@ -102,7 +102,7 @@ function App() {
 
 function Login({ users, onLogin }) {
   const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("123456");
+  const [password, setPassword] = useState("");
   const [error, setError] = useState("");
 
   useEffect(() => {
@@ -138,7 +138,6 @@ function Login({ users, onLogin }) {
         <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} />
         {error && <p className="error">{error}</p>}
         <button className="primary" type="submit">Login</button>
-        <small className="muted">Sample password: 123456</small>
       </form>
     </div>
   );

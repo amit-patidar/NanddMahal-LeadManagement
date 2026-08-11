@@ -351,11 +351,11 @@ async function seedDb() {
 
   await run(
     "INSERT INTO users (name, email, password, role) VALUES (:name, :email, :password, :role)",
-    { name: "Divyanshu", email: "divyanshu@nandtmahal.local", password: "123456", role: "admin" }
+    { name: "Amit Patidar", email: "amitpatidar.7492@gmail.com", password: "@NanddMahal", role: "admin" }
   );
   await run(
     "INSERT INTO users (name, email, password, role) VALUES (:name, :email, :password, :role)",
-    { name: "Amit", email: "amit@nandtmahal.local", password: "123456", role: "sales" }
+    { name: "K Sengar", email: "Ksengar413@gmail.com", password: "@NanddMahal", role: "sales" }
   );
 }
 
