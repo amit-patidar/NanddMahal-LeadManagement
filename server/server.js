@@ -42,13 +42,13 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (req.method === "GET" && url.pathname === "/api/users") {
-      return json(res, 200, await all("SELECT id, name, email, role FROM users WHERE active = 1 ORDER BY id"));
+      return json(res, 200, await all("SELECT id, name, email, role FROM users WHERE active ORDER BY id"));
     }
 
     if (req.method === "POST" && url.pathname === "/api/auth/login") {
       const body = await readJson(req);
       const user = await get(
-        "SELECT id, name, email, role FROM users WHERE email = :email AND password = :password AND active = 1",
+        "SELECT id, name, email, role FROM users WHERE email = :email AND password = :password AND active",
         { email: body.email, password: body.password }
       );
       if (!user) return json(res, 401, { error: "Invalid login" });
