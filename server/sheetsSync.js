@@ -65,14 +65,18 @@ function googleAuthConfig() {
   }
 
   if (process.env.GOOGLE_SERVICE_ACCOUNT_JSON) {
-    return { credentials: JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_JSON), scopes };
+    const credentials = JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_JSON);
+    if (credentials.private_key) {
+      credentials.private_key = normalizePrivateKey(credentials.private_key);
+    }
+    return { credentials, scopes };
   }
 
   if (process.env.GOOGLE_CLIENT_EMAIL && process.env.GOOGLE_PRIVATE_KEY) {
     return {
       credentials: {
         client_email: process.env.GOOGLE_CLIENT_EMAIL,
-        private_key: process.env.GOOGLE_PRIVATE_KEY.replace(/\\n/g, "\n"),
+        private_key: normalizePrivateKey(process.env.GOOGLE_PRIVATE_KEY),
         project_id: process.env.GOOGLE_PROJECT_ID
       },
       scopes
@@ -80,6 +84,14 @@ function googleAuthConfig() {
   }
 
   return null;
+}
+
+function normalizePrivateKey(value) {
+  return String(value || "")
+    .trim()
+    .replace(/^["']|["']$/g, "")
+    .replace(/\\\\n/g, "\n")
+    .replace(/\\n/g, "\n");
 }
 
 function mapRow(headers, row) {
