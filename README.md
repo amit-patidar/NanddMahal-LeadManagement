@@ -1,6 +1,8 @@
 # Nandd Mahal Lead CRM
 
-Simple private CRM for a two-person real-estate sales team. It keeps Meta leads, follow-ups, site visits, comments, and activity history in one SQLite-backed web app.
+Simple private CRM for a two-person real-estate sales team. It keeps Meta leads, follow-ups, site visits, comments, and activity history in one web app.
+
+See `DEVELOPMENT_NOTES.md` before making feature changes. It documents the current architecture, deployment, data rules, and known decisions.
 
 ## Run Locally
 
@@ -11,10 +13,12 @@ npm run dev
 
 Open the Vite URL shown in the terminal. The API runs on `http://localhost:4000`.
 
-Sample users:
+Users are seeded for local development if the database is empty:
 
-- `divyanshu@nandtmahal.local` / `123456`
-- `amit@nandtmahal.local` / `123456`
+- `amitpatidar.7492@gmail.com`
+- `Ksengar413@gmail.com`
+
+Passwords are environment/database data and should not be committed.
 
 ## Google Sheets Sync
 
@@ -26,7 +30,7 @@ GOOGLE_WORKSHEET_NAME=Nandd Mahal Leads
 GOOGLE_APPLICATION_CREDENTIALS=C:\path\to\service-account.json
 ```
 
-The manual **Sync Leads** button imports rows whose Meta Lead ID is not already present. Existing CRM status, comments, follow-ups, and site visits are never overwritten by sync.
+The manual **Sync Leads** button imports rows whose Meta Lead ID is not already present. Existing CRM status, comments, follow-ups, rejected status, and site visits are never overwritten by sync.
 
 Expected sheet columns can use common names such as:
 
@@ -119,12 +123,12 @@ In Render Web Service:
 Included:
 
 - Dashboard counts
-- New Leads, Follow-ups, Site Visits, Super Interested, Missed, All Leads
+- New Leads, Follow-ups, Site Visits, Super Interested, Rejected Leads, Missed, All Leads
 - Flexible status changes
 - Follow-up and site visit scheduling
 - Dynamic missed lead calculations
 - Lead detail with permanent activity timeline
-- SQLite schema prepared for later PostgreSQL migration
+- SQLite for local development and PostgreSQL for Render deployment
 
 Not included in v1:
 
