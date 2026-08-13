@@ -418,17 +418,19 @@ function LeadDetail({ id, user, onBack }) {
   const [data, setData] = useState(null);
   const [whatsappStatus, setWhatsappStatus] = useState(null);
   const [whatsappMessages, setWhatsappMessages] = useState([]);
+  const [whatsappReplyWindow, setWhatsappReplyWindow] = useState(null);
   const [dialog, setDialog] = useState(null);
 
   async function load() {
     const [leadData, status, messages] = await Promise.all([
       request(`/leads/${id}`),
       request("/whatsapp/status").catch(() => null),
-      request(`/leads/${id}/whatsapp/messages`).catch(() => [])
+      request(`/leads/${id}/whatsapp/messages`).catch(() => ({ messages: [], replyWindow: null }))
     ]);
     setData(leadData);
     setWhatsappStatus(status);
-    setWhatsappMessages(messages);
+    setWhatsappMessages(messages.messages || []);
+    setWhatsappReplyWindow(messages.replyWindow || null);
   }
 
   useEffect(() => {
@@ -472,7 +474,7 @@ function LeadDetail({ id, user, onBack }) {
           }}>{label(action)}</button>
         ))}
       </div>
-      <WhatsAppPanel lead={lead} user={user} status={whatsappStatus} messages={whatsappMessages} onChanged={load} />
+      <WhatsAppPanel lead={lead} user={user} status={whatsappStatus} messages={whatsappMessages} replyWindow={whatsappReplyWindow} onChanged={load} />
       <h2>Activity Timeline</h2>
       <div className="timeline">
         {activities.map((a) => (
@@ -488,12 +490,15 @@ function LeadDetail({ id, user, onBack }) {
   );
 }
 
-function WhatsAppPanel({ lead, user, status, messages, onChanged }) {
+function WhatsAppPanel({ lead, user, status, messages, replyWindow, onChanged }) {
   const [templateName, setTemplateName] = useState("");
   const [language, setLanguage] = useState("en");
   const [parameters, setParameters] = useState("");
+  const [replyText, setReplyText] = useState("");
   const [sending, setSending] = useState(false);
+  const [replying, setReplying] = useState(false);
   const [message, setMessage] = useState("");
+  const canReply = Boolean(status?.sendConfigured && replyWindow?.open);
 
   async function send(e) {
     e.preventDefault();
@@ -513,6 +518,26 @@ function WhatsAppPanel({ lead, user, status, messages, onChanged }) {
       setMessage(err.message);
     } finally {
       setSending(false);
+    }
+  }
+
+  async function sendReply(e) {
+    e.preventDefault();
+    setReplying(true);
+    setMessage("");
+    try {
+      const result = await request(`/leads/${lead.id}/whatsapp/messages`, {
+        method: "POST",
+        body: { userId: user.id, text: replyText }
+      });
+      setMessage(`WhatsApp reply sent${result.providerMessageId ? ` (${result.providerMessageId})` : ""}.`);
+      setReplyText("");
+      await onChanged();
+    } catch (err) {
+      setMessage(err.message);
+      await onChanged();
+    } finally {
+      setReplying(false);
     }
   }
 
@@ -560,6 +585,24 @@ function WhatsAppPanel({ lead, user, status, messages, onChanged }) {
           </div>
         ))}
       </div>
+      <form className="whatsapp-reply" onSubmit={sendReply}>
+        <label>
+          Direct Reply
+          <textarea
+            value={replyText}
+            onChange={(e) => setReplyText(e.target.value)}
+            placeholder="Type a WhatsApp reply"
+            disabled={!canReply || replying}
+            maxLength={4096}
+          />
+        </label>
+        <div className="reply-footer">
+          <small className="muted">{replyWindowText(replyWindow)}</small>
+          <button className="secondary" type="submit" disabled={!canReply || replying || !replyText.trim()}>
+            {replying ? "Sending Reply" : "Send Reply"}
+          </button>
+        </div>
+      </form>
     </section>
   );
 }
@@ -657,10 +700,14 @@ function buttonClass(action) {
   return "secondary";
 }
 
-function nextDate(lead) {
-  if (lead.followup_date) return `FU ${lead.followup_date}${lead.followup_time ? ` ${lead.followup_time}` : ""}`;
-  if (lead.site_visit_date) return `SV ${lead.site_visit_date}${lead.site_visit_time ? ` ${lead.site_visit_time}` : ""}`;
-  return "-";
+function replyWindowText(replyWindow) {
+  if (replyWindow?.open && replyWindow.expiresAt) {
+    return `Free-text replies available until ${formatDateTime(replyWindow.expiresAt)}.`;
+  }
+  if (replyWindow?.lastInboundAt) {
+    return "The 24-hour reply window has expired. Send an approved template instead.";
+  }
+  return "Free-text replies unlock after the customer replies on WhatsApp.";
 }
 
 function activityText(a) {

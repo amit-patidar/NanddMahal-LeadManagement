@@ -2,14 +2,17 @@ import {
   addActivity,
   findLeadByPhone,
   get,
+  lastInboundWhatsAppMessageForLead,
   normalizePhone,
   recordWhatsAppEvent,
   recordWhatsAppMessage,
   whatsappMessagesForLead
 } from "./db.js";
-import { sendMetaTemplateMessage, whatsappStatus } from "./whatsappProvider.js";
+import { sendMetaTemplateMessage, sendMetaTextMessage, whatsappStatus } from "./whatsappProvider.js";
 
 export { whatsappMessagesForLead, whatsappStatus };
+
+const REPLY_WINDOW_HOURS = 24;
 
 export async function processWhatsAppEvents(events) {
   const results = [];
@@ -53,6 +56,66 @@ export async function sendLeadWhatsAppTemplate({ leadId, userId, templateName, l
   });
 
   return { sent: true, providerMessageId };
+}
+
+export async function sendLeadWhatsAppText({ leadId, userId, body }) {
+  const lead = await get("SELECT * FROM leads WHERE id = :leadId", { leadId });
+  if (!lead) throw new Error("Lead not found");
+  if (!body?.trim()) throw new Error("Message is required.");
+
+  const window = await whatsAppReplyWindowForLead(leadId);
+  if (!window.open) {
+    throw new Error("Direct WhatsApp reply is allowed only within 24 hours after the customer messages you. Send an approved template instead.");
+  }
+
+  const to = normalizePhone(lead.phone);
+  if (!to) throw new Error("Lead phone number is missing or invalid.");
+
+  const providerPayload = await sendMetaTextMessage({ to, body });
+  const providerMessageId = providerPayload.messages?.[0]?.id || null;
+  const now = new Date().toISOString();
+
+  await recordWhatsAppMessage({
+    leadId,
+    provider: "meta",
+    providerMessageId,
+    direction: "outbound",
+    messageType: "text",
+    body: body.trim(),
+    phone: to,
+    status: "sent",
+    sentByUserId: userId,
+    rawPayload: providerPayload,
+    createdAt: now,
+    sentAt: now
+  });
+  await addActivity({
+    leadId,
+    userId,
+    activityType: "WhatsApp Reply Sent",
+    comment: body.trim()
+  });
+
+  return { sent: true, providerMessageId };
+}
+
+export async function whatsAppReplyWindowForLead(leadId) {
+  const lastInbound = await lastInboundWhatsAppMessageForLead(leadId);
+  if (!lastInbound?.created_at) {
+    return { open: false, lastInboundAt: null, expiresAt: null };
+  }
+
+  const lastInboundAt = new Date(lastInbound.created_at);
+  if (Number.isNaN(lastInboundAt.getTime())) {
+    return { open: false, lastInboundAt: lastInbound.created_at, expiresAt: null };
+  }
+
+  const expiresAt = new Date(lastInboundAt.getTime() + REPLY_WINDOW_HOURS * 60 * 60 * 1000);
+  return {
+    open: expiresAt.getTime() > Date.now(),
+    lastInboundAt: lastInboundAt.toISOString(),
+    expiresAt: expiresAt.toISOString()
+  };
 }
 
 async function processWhatsAppEvent(event) {

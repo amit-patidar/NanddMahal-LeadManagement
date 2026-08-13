@@ -333,6 +333,19 @@ export async function whatsappMessagesForLead(leadId) {
   );
 }
 
+export async function lastInboundWhatsAppMessageForLead(leadId) {
+  return get(
+    `SELECT *
+     FROM whatsapp_messages
+     WHERE lead_id = :leadId
+       AND direction = 'inbound'
+       AND status = 'received'
+     ORDER BY created_at DESC, id DESC
+     LIMIT 1`,
+    { leadId }
+  );
+}
+
 export async function findLeadByPhone(phone) {
   const normalized = normalizePhone(phone);
   if (!normalized) return null;

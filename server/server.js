@@ -23,7 +23,9 @@ import { verifyMetaChallenge, verifyMetaSignature } from "./whatsappProvider.js"
 import { parseMetaWebhook } from "./whatsappWebhook.js";
 import {
   processWhatsAppEvents,
+  sendLeadWhatsAppText,
   sendLeadWhatsAppTemplate,
+  whatsAppReplyWindowForLead,
   whatsappMessagesForLead,
   whatsappStatus
 } from "./whatsappService.js";
@@ -116,7 +118,21 @@ const server = http.createServer(async (req, res) => {
     const leadWhatsAppMessagesMatch = url.pathname.match(/^\/api\/leads\/(\d+)\/whatsapp\/messages$/);
     if (req.method === "GET" && leadWhatsAppMessagesMatch) {
       const id = Number(leadWhatsAppMessagesMatch[1]);
-      return json(res, 200, await whatsappMessagesForLead(id));
+      const messages = await whatsappMessagesForLead(id);
+      const replyWindow = await whatsAppReplyWindowForLead(id);
+      return json(res, 200, { messages, replyWindow });
+    }
+
+    const leadWhatsAppTextMatch = url.pathname.match(/^\/api\/leads\/(\d+)\/whatsapp\/messages$/);
+    if (req.method === "POST" && leadWhatsAppTextMatch) {
+      const id = Number(leadWhatsAppTextMatch[1]);
+      const body = await readJson(req);
+      const result = await sendLeadWhatsAppText({
+        leadId: id,
+        userId: currentUserId(req, body),
+        body: body.text || body.body || ""
+      });
+      return json(res, 200, result);
     }
 
     const leadWhatsAppSendMatch = url.pathname.match(/^\/api\/leads\/(\d+)\/whatsapp\/send$/);

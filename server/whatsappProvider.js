@@ -93,6 +93,41 @@ export async function sendMetaTemplateMessage({ to, templateName, language = "en
   return payload;
 }
 
+export async function sendMetaTextMessage({ to, body }) {
+  const config = whatsappConfig();
+  if (!config.accessToken || !config.phoneNumberId) {
+    throw new Error("WhatsApp sending is not configured. Add WHATSAPP_ACCESS_TOKEN and WHATSAPP_PHONE_NUMBER_ID.");
+  }
+  if (!body?.trim()) throw new Error("Message is required.");
+
+  const response = await fetch(`https://graph.facebook.com/${config.apiVersion}/${config.phoneNumberId}/messages`, {
+    method: "POST",
+    headers: {
+      "authorization": `Bearer ${config.accessToken}`,
+      "content-type": "application/json"
+    },
+    body: JSON.stringify({
+      messaging_product: "whatsapp",
+      to,
+      type: "text",
+      text: {
+        preview_url: false,
+        body: body.trim()
+      }
+    })
+  });
+
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const message = payload.error?.message || `WhatsApp send failed with status ${response.status}`;
+    const error = new Error(message);
+    error.providerStatus = response.status;
+    error.providerPayload = payload;
+    throw error;
+  }
+  return payload;
+}
+
 function timingSafeEqual(left, right) {
   const leftBuffer = Buffer.from(left);
   const rightBuffer = Buffer.from(right);

@@ -484,6 +484,33 @@ dd {
   background: #fff;
 }
 
+.whatsapp-reply {
+  display: grid;
+  gap: 8px;
+}
+
+.whatsapp-reply label {
+  display: grid;
+  gap: 5px;
+  font-size: 13px;
+  color: #475467;
+}
+
+.whatsapp-reply textarea {
+  min-height: 82px;
+  border: 1px solid #cfd6df;
+  border-radius: 8px;
+  padding: 9px 10px;
+  resize: vertical;
+}
+
+.reply-footer {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: center;
+}
+
 .whatsapp-history {
   display: grid;
   gap: 8px;
@@ -644,6 +671,11 @@ blockquote {
 
   .whatsapp-send {
     grid-template-columns: 1fr;
+  }
+
+  .reply-footer {
+    align-items: stretch;
+    flex-direction: column;
   }
 
   .search-box,

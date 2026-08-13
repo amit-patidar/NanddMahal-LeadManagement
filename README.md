@@ -123,6 +123,11 @@ WHATSAPP_WEBHOOK_REQUIRE_SIGNATURE=true
 
 The same callback route handles Meta verification with `GET` and incoming webhook events with `POST`.
 
+The lead detail WhatsApp panel supports:
+
+- Approved template sends for business-initiated messages.
+- Direct/free-text replies only when the lead has an inbound WhatsApp message inside the 24-hour customer service window.
+
 ### 4. Import Local Data Into Render PostgreSQL
 
 After Render PostgreSQL is created, set your local `.env` temporarily with the Render `DATABASE_URL`, then run:
@@ -153,6 +158,7 @@ Included:
 - Follow-up and site visit scheduling
 - Dynamic missed lead calculations
 - Lead detail with permanent activity timeline
+- WhatsApp webhook foundation, template send, and 24-hour direct replies on feature branch
 - SQLite for local development and PostgreSQL for Render deployment
 
 Not included in v1:
