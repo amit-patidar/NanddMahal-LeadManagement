@@ -95,11 +95,50 @@ export async function initDb() {
         created_at TEXT NOT NULL
       );
 
+      CREATE TABLE IF NOT EXISTS whatsapp_messages (
+        id SERIAL PRIMARY KEY,
+        lead_id INTEGER REFERENCES leads(id) ON DELETE SET NULL,
+        provider TEXT NOT NULL,
+        provider_message_id TEXT,
+        direction TEXT NOT NULL,
+        message_type TEXT NOT NULL,
+        template_name TEXT,
+        body TEXT,
+        phone TEXT,
+        status TEXT NOT NULL,
+        error_code TEXT,
+        error_message TEXT,
+        sent_by_user_id INTEGER REFERENCES users(id),
+        raw_payload TEXT,
+        created_at TEXT NOT NULL,
+        sent_at TEXT,
+        delivered_at TEXT,
+        read_at TEXT,
+        failed_at TEXT,
+        UNIQUE (provider, provider_message_id)
+      );
+
+      CREATE TABLE IF NOT EXISTS whatsapp_events (
+        id SERIAL PRIMARY KEY,
+        provider TEXT NOT NULL,
+        event_key TEXT NOT NULL UNIQUE,
+        provider_message_id TEXT,
+        lead_id INTEGER REFERENCES leads(id) ON DELETE SET NULL,
+        event_type TEXT NOT NULL,
+        raw_payload TEXT NOT NULL,
+        received_at TEXT NOT NULL,
+        processed_at TEXT,
+        processing_status TEXT NOT NULL
+      );
+
       CREATE INDEX IF NOT EXISTS idx_leads_status ON leads(status);
       CREATE INDEX IF NOT EXISTS idx_leads_assigned_to ON leads(assigned_to);
       CREATE INDEX IF NOT EXISTS idx_leads_followup_date ON leads(followup_date);
       CREATE INDEX IF NOT EXISTS idx_leads_site_visit_date ON leads(site_visit_date);
       CREATE INDEX IF NOT EXISTS idx_activities_lead_id ON lead_activities(lead_id);
+      CREATE INDEX IF NOT EXISTS idx_whatsapp_messages_lead_id ON whatsapp_messages(lead_id);
+      CREATE INDEX IF NOT EXISTS idx_whatsapp_messages_phone ON whatsapp_messages(phone);
+      CREATE INDEX IF NOT EXISTS idx_whatsapp_events_lead_id ON whatsapp_events(lead_id);
     `);
   } else {
     db.exec(`
@@ -153,11 +192,53 @@ export async function initDb() {
         FOREIGN KEY (user_id) REFERENCES users(id)
       );
 
+      CREATE TABLE IF NOT EXISTS whatsapp_messages (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        lead_id INTEGER,
+        provider TEXT NOT NULL,
+        provider_message_id TEXT,
+        direction TEXT NOT NULL,
+        message_type TEXT NOT NULL,
+        template_name TEXT,
+        body TEXT,
+        phone TEXT,
+        status TEXT NOT NULL,
+        error_code TEXT,
+        error_message TEXT,
+        sent_by_user_id INTEGER,
+        raw_payload TEXT,
+        created_at TEXT NOT NULL,
+        sent_at TEXT,
+        delivered_at TEXT,
+        read_at TEXT,
+        failed_at TEXT,
+        UNIQUE (provider, provider_message_id),
+        FOREIGN KEY (lead_id) REFERENCES leads(id) ON DELETE SET NULL,
+        FOREIGN KEY (sent_by_user_id) REFERENCES users(id)
+      );
+
+      CREATE TABLE IF NOT EXISTS whatsapp_events (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        provider TEXT NOT NULL,
+        event_key TEXT NOT NULL UNIQUE,
+        provider_message_id TEXT,
+        lead_id INTEGER,
+        event_type TEXT NOT NULL,
+        raw_payload TEXT NOT NULL,
+        received_at TEXT NOT NULL,
+        processed_at TEXT,
+        processing_status TEXT NOT NULL,
+        FOREIGN KEY (lead_id) REFERENCES leads(id) ON DELETE SET NULL
+      );
+
       CREATE INDEX IF NOT EXISTS idx_leads_status ON leads(status);
       CREATE INDEX IF NOT EXISTS idx_leads_assigned_to ON leads(assigned_to);
       CREATE INDEX IF NOT EXISTS idx_leads_followup_date ON leads(followup_date);
       CREATE INDEX IF NOT EXISTS idx_leads_site_visit_date ON leads(site_visit_date);
       CREATE INDEX IF NOT EXISTS idx_activities_lead_id ON lead_activities(lead_id);
+      CREATE INDEX IF NOT EXISTS idx_whatsapp_messages_lead_id ON whatsapp_messages(lead_id);
+      CREATE INDEX IF NOT EXISTS idx_whatsapp_messages_phone ON whatsapp_messages(phone);
+      CREATE INDEX IF NOT EXISTS idx_whatsapp_events_lead_id ON whatsapp_events(lead_id);
     `);
 
     await migrateSqlite();
@@ -239,6 +320,118 @@ export async function addActivity({ leadId, userId = null, activityType, oldValu
      WHERE id = :leadId`,
     { leadId, createdAt, comment }
   );
+}
+
+export async function whatsappMessagesForLead(leadId) {
+  return all(
+    `SELECT *
+     FROM whatsapp_messages
+     WHERE lead_id = :leadId
+     ORDER BY created_at DESC, id DESC
+     LIMIT 100`,
+    { leadId }
+  );
+}
+
+export async function findLeadByPhone(phone) {
+  const normalized = normalizePhone(phone);
+  if (!normalized) return null;
+  const rows = await all("SELECT * FROM leads WHERE phone IS NOT NULL");
+  return rows.find((lead) => normalizePhone(lead.phone) === normalized) || null;
+}
+
+export async function recordWhatsAppEvent(event) {
+  const receivedAt = event.receivedAt || nowIso();
+  const processedAt = event.processedAt || nowIso();
+  const params = {
+    provider: event.provider || "meta",
+    eventKey: event.eventKey,
+    providerMessageId: event.providerMessageId || null,
+    leadId: event.leadId || null,
+    eventType: event.eventType,
+    rawPayload: JSON.stringify(event.rawPayload || {}),
+    receivedAt,
+    processedAt,
+    processingStatus: event.processingStatus || "processed"
+  };
+
+  const sql = isPostgres
+    ? `INSERT INTO whatsapp_events
+        (provider, event_key, provider_message_id, lead_id, event_type, raw_payload, received_at, processed_at, processing_status)
+       VALUES
+        (:provider, :eventKey, :providerMessageId, :leadId, :eventType, :rawPayload, :receivedAt, :processedAt, :processingStatus)
+       ON CONFLICT (event_key) DO NOTHING`
+    : `INSERT OR IGNORE INTO whatsapp_events
+        (provider, event_key, provider_message_id, lead_id, event_type, raw_payload, received_at, processed_at, processing_status)
+       VALUES
+        (:provider, :eventKey, :providerMessageId, :leadId, :eventType, :rawPayload, :receivedAt, :processedAt, :processingStatus)`;
+
+  return run(sql, params);
+}
+
+export async function recordWhatsAppMessage(message) {
+  const createdAt = message.createdAt || nowIso();
+  const sentAt = message.sentAt || null;
+  const params = {
+    leadId: message.leadId || null,
+    provider: message.provider || "meta",
+    providerMessageId: message.providerMessageId || null,
+    direction: message.direction,
+    messageType: message.messageType || "text",
+    templateName: message.templateName || null,
+    body: message.body || null,
+    phone: message.phone || null,
+    status: message.status,
+    errorCode: message.errorCode || null,
+    errorMessage: message.errorMessage || null,
+    sentByUserId: message.sentByUserId || null,
+    rawPayload: JSON.stringify(message.rawPayload || {}),
+    createdAt,
+    sentAt,
+    deliveredAt: message.deliveredAt || null,
+    readAt: message.readAt || null,
+    failedAt: message.failedAt || null
+  };
+
+  const sql = isPostgres
+    ? `INSERT INTO whatsapp_messages
+        (lead_id, provider, provider_message_id, direction, message_type, template_name, body, phone, status, error_code, error_message, sent_by_user_id, raw_payload, created_at, sent_at, delivered_at, read_at, failed_at)
+       VALUES
+        (:leadId, :provider, :providerMessageId, :direction, :messageType, :templateName, :body, :phone, :status, :errorCode, :errorMessage, :sentByUserId, :rawPayload, :createdAt, :sentAt, :deliveredAt, :readAt, :failedAt)
+       ON CONFLICT (provider, provider_message_id) DO UPDATE SET
+        lead_id = COALESCE(EXCLUDED.lead_id, whatsapp_messages.lead_id),
+        status = EXCLUDED.status,
+        error_code = EXCLUDED.error_code,
+        error_message = EXCLUDED.error_message,
+        raw_payload = EXCLUDED.raw_payload,
+        sent_at = COALESCE(EXCLUDED.sent_at, whatsapp_messages.sent_at),
+        delivered_at = COALESCE(EXCLUDED.delivered_at, whatsapp_messages.delivered_at),
+        read_at = COALESCE(EXCLUDED.read_at, whatsapp_messages.read_at),
+        failed_at = COALESCE(EXCLUDED.failed_at, whatsapp_messages.failed_at)`
+    : `INSERT INTO whatsapp_messages
+        (lead_id, provider, provider_message_id, direction, message_type, template_name, body, phone, status, error_code, error_message, sent_by_user_id, raw_payload, created_at, sent_at, delivered_at, read_at, failed_at)
+       VALUES
+        (:leadId, :provider, :providerMessageId, :direction, :messageType, :templateName, :body, :phone, :status, :errorCode, :errorMessage, :sentByUserId, :rawPayload, :createdAt, :sentAt, :deliveredAt, :readAt, :failedAt)
+       ON CONFLICT(provider, provider_message_id) DO UPDATE SET
+        lead_id = COALESCE(excluded.lead_id, whatsapp_messages.lead_id),
+        status = excluded.status,
+        error_code = excluded.error_code,
+        error_message = excluded.error_message,
+        raw_payload = excluded.raw_payload,
+        sent_at = COALESCE(excluded.sent_at, whatsapp_messages.sent_at),
+        delivered_at = COALESCE(excluded.delivered_at, whatsapp_messages.delivered_at),
+        read_at = COALESCE(excluded.read_at, whatsapp_messages.read_at),
+        failed_at = COALESCE(excluded.failed_at, whatsapp_messages.failed_at)`;
+
+  return run(sql, params);
+}
+
+export function normalizePhone(phone) {
+  const digits = String(phone || "").replace(/\D/g, "");
+  if (!digits) return "";
+  if (digits.length === 10) return `91${digits}`;
+  if (digits.length > 10 && digits.startsWith("0")) return digits.slice(1);
+  return digits;
 }
 
 export async function createLeadFromSource(source, userId = null) {

@@ -416,10 +416,19 @@ function LeadList({ config, user, openLead, embedded = false }) {
 
 function LeadDetail({ id, user, onBack }) {
   const [data, setData] = useState(null);
+  const [whatsappStatus, setWhatsappStatus] = useState(null);
+  const [whatsappMessages, setWhatsappMessages] = useState([]);
   const [dialog, setDialog] = useState(null);
 
   async function load() {
-    setData(await request(`/leads/${id}`));
+    const [leadData, status, messages] = await Promise.all([
+      request(`/leads/${id}`),
+      request("/whatsapp/status").catch(() => null),
+      request(`/leads/${id}/whatsapp/messages`).catch(() => [])
+    ]);
+    setData(leadData);
+    setWhatsappStatus(status);
+    setWhatsappMessages(messages);
   }
 
   useEffect(() => {
@@ -463,6 +472,7 @@ function LeadDetail({ id, user, onBack }) {
           }}>{label(action)}</button>
         ))}
       </div>
+      <WhatsAppPanel lead={lead} user={user} status={whatsappStatus} messages={whatsappMessages} onChanged={load} />
       <h2>Activity Timeline</h2>
       <div className="timeline">
         {activities.map((a) => (
@@ -474,6 +484,82 @@ function LeadDetail({ id, user, onBack }) {
         ))}
       </div>
       {dialog && <ActionDialog dialog={dialog} onClose={() => setDialog(null)} onSubmit={mutate} />}
+    </section>
+  );
+}
+
+function WhatsAppPanel({ lead, user, status, messages, onChanged }) {
+  const [templateName, setTemplateName] = useState("");
+  const [language, setLanguage] = useState("en");
+  const [parameters, setParameters] = useState("");
+  const [sending, setSending] = useState(false);
+  const [message, setMessage] = useState("");
+
+  async function send(e) {
+    e.preventDefault();
+    setSending(true);
+    setMessage("");
+    try {
+      const params = parameters.split(",").map((item) => item.trim()).filter(Boolean);
+      const result = await request(`/leads/${lead.id}/whatsapp/send`, {
+        method: "POST",
+        body: { userId: user.id, templateName, language, parameters: params }
+      });
+      setMessage(`WhatsApp template sent${result.providerMessageId ? ` (${result.providerMessageId})` : ""}.`);
+      setTemplateName("");
+      setParameters("");
+      await onChanged();
+    } catch (err) {
+      setMessage(err.message);
+    } finally {
+      setSending(false);
+    }
+  }
+
+  return (
+    <section className="whatsapp-panel">
+      <div className="panel-heading">
+        <div>
+          <h2><MessageSquareText size={20} /> WhatsApp</h2>
+          <p className="muted">Callback URL path: <code>{status?.callbackUrlPath || "/api/webhooks/whatsapp/meta"}</code></p>
+        </div>
+        <span className={`badge ${status?.sendConfigured ? "connected" : "attempted"}`}>
+          {status?.sendConfigured ? "Send Ready" : "Setup Needed"}
+        </span>
+      </div>
+      <form className="whatsapp-send" onSubmit={send}>
+        <label>
+          Template Name
+          <input value={templateName} onChange={(e) => setTemplateName(e.target.value)} placeholder="approved_template_name" required />
+        </label>
+        <label>
+          Language
+          <input value={language} onChange={(e) => setLanguage(e.target.value)} placeholder="en" required />
+        </label>
+        <label>
+          Parameters
+          <input value={parameters} onChange={(e) => setParameters(e.target.value)} placeholder="Comma separated values" />
+        </label>
+        <button className="primary" type="submit" disabled={sending || !status?.sendConfigured}>
+          <MessageSquareText size={16} /> {sending ? "Sending" : "Send Template"}
+        </button>
+      </form>
+      {message && <p className={message.toLowerCase().includes("sent") ? "success-text" : "error"}>{message}</p>}
+      <div className="whatsapp-history">
+        <strong>Recent WhatsApp Activity</strong>
+        {messages.length === 0 ? (
+          <p className="muted">No WhatsApp messages recorded for this lead yet.</p>
+        ) : messages.map((item) => (
+          <div className="whatsapp-message" key={item.id}>
+            <span className="badge">{item.status}</span>
+            <div>
+              <strong>{item.direction} {item.message_type}</strong>
+              <p>{item.body || item.template_name || item.error_message || "-"}</p>
+              <small className="muted">{formatDateTime(item.created_at)}</small>
+            </div>
+          </div>
+        ))}
+      </div>
     </section>
   );
 }

@@ -98,6 +98,31 @@ GOOGLE_SERVICE_ACCOUNT_JSON=<full service account JSON>
 
 Use either the three Google fields above or the full JSON field, not both.
 
+### WhatsApp Webhook Setup
+
+The WhatsApp automation work lives on the `feature/whatsapp-automation` branch until it is ready to merge.
+
+Meta callback URL:
+
+```text
+https://nanddmahal-leadmanagement.onrender.com/api/webhooks/whatsapp/meta
+```
+
+Render environment variables:
+
+```bash
+WHATSAPP_PROVIDER=meta
+WHATSAPP_VERIFY_TOKEN=<secret verify token you create>
+WHATSAPP_APP_SECRET=<Meta app secret>
+WHATSAPP_ACCESS_TOKEN=<Meta WhatsApp access token>
+WHATSAPP_PHONE_NUMBER_ID=<Meta WhatsApp phone number id>
+WHATSAPP_BUSINESS_ACCOUNT_ID=<Meta WhatsApp business account id>
+WHATSAPP_API_VERSION=v23.0
+WHATSAPP_WEBHOOK_REQUIRE_SIGNATURE=true
+```
+
+The same callback route handles Meta verification with `GET` and incoming webhook events with `POST`.
+
 ### 4. Import Local Data Into Render PostgreSQL
 
 After Render PostgreSQL is created, set your local `.env` temporarily with the Render `DATABASE_URL`, then run:
@@ -132,7 +157,6 @@ Included:
 
 Not included in v1:
 
-- WhatsApp automation
 - Email marketing
 - Finance/inventory
 - Complex analytics

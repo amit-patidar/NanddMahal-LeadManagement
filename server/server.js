@@ -19,6 +19,14 @@ import {
   yesterdayDate
 } from "./db.js";
 import { syncGoogleSheet } from "./sheetsSync.js";
+import { verifyMetaChallenge, verifyMetaSignature } from "./whatsappProvider.js";
+import { parseMetaWebhook } from "./whatsappWebhook.js";
+import {
+  processWhatsAppEvents,
+  sendLeadWhatsAppTemplate,
+  whatsappMessagesForLead,
+  whatsappStatus
+} from "./whatsappService.js";
 
 const PORT = Number(process.env.PORT || 4000);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -39,6 +47,28 @@ const server = http.createServer(async (req, res) => {
 
     if (req.method === "GET" && url.pathname === "/api/health") {
       return json(res, 200, { ok: true });
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/webhooks/whatsapp/meta") {
+      const verification = verifyMetaChallenge(url.searchParams);
+      if (!verification.ok) return text(res, 403, "Webhook verification failed");
+      return text(res, 200, verification.challenge);
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/webhooks/whatsapp/meta") {
+      const rawBody = await readRaw(req);
+      const signature = req.headers["x-hub-signature-256"];
+      if (!verifyMetaSignature(rawBody, Array.isArray(signature) ? signature[0] : signature)) {
+        return json(res, 403, { error: "Invalid WhatsApp webhook signature" });
+      }
+      const payload = rawBody.length ? JSON.parse(rawBody.toString("utf8")) : {};
+      const events = parseMetaWebhook(payload);
+      const results = await processWhatsAppEvents(events);
+      return json(res, 200, { ok: true, received: events.length, results });
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/whatsapp/status") {
+      return json(res, 200, whatsappStatus());
     }
 
     if (req.method === "GET" && url.pathname === "/api/users") {
@@ -81,6 +111,26 @@ const server = http.createServer(async (req, res) => {
         { id }
       );
       return json(res, 200, { lead, activities });
+    }
+
+    const leadWhatsAppMessagesMatch = url.pathname.match(/^\/api\/leads\/(\d+)\/whatsapp\/messages$/);
+    if (req.method === "GET" && leadWhatsAppMessagesMatch) {
+      const id = Number(leadWhatsAppMessagesMatch[1]);
+      return json(res, 200, await whatsappMessagesForLead(id));
+    }
+
+    const leadWhatsAppSendMatch = url.pathname.match(/^\/api\/leads\/(\d+)\/whatsapp\/send$/);
+    if (req.method === "POST" && leadWhatsAppSendMatch) {
+      const id = Number(leadWhatsAppSendMatch[1]);
+      const body = await readJson(req);
+      const result = await sendLeadWhatsAppTemplate({
+        leadId: id,
+        userId: currentUserId(req, body),
+        templateName: body.templateName,
+        language: body.language || "en",
+        parameters: Array.isArray(body.parameters) ? body.parameters : []
+      });
+      return json(res, 200, result);
     }
 
     if (req.method === "POST" && leadMatch) {
@@ -330,10 +380,20 @@ function currentUserId(req, body = {}) {
 }
 
 async function readJson(req) {
+  const raw = await readRaw(req);
+  return raw.length ? JSON.parse(raw.toString("utf8")) : {};
+}
+
+async function readRaw(req) {
   const chunks = [];
-  for await (const chunk of req) chunks.push(chunk);
-  const raw = Buffer.concat(chunks).toString("utf8");
-  return raw ? JSON.parse(raw) : {};
+  let size = 0;
+  const limit = 1024 * 1024;
+  for await (const chunk of req) {
+    size += chunk.length;
+    if (size > limit) throw new Error("Request body too large");
+    chunks.push(chunk);
+  }
+  return Buffer.concat(chunks);
 }
 
 function json(res, status, payload) {
@@ -341,9 +401,19 @@ function json(res, status, payload) {
     "content-type": "application/json",
     "access-control-allow-origin": "*",
     "access-control-allow-methods": "GET,POST,OPTIONS",
-    "access-control-allow-headers": "content-type,x-user-id"
+    "access-control-allow-headers": "content-type,x-user-id,x-hub-signature-256"
   });
   res.end(JSON.stringify(payload));
+}
+
+function text(res, status, payload) {
+  res.writeHead(status, {
+    "content-type": "text/plain",
+    "access-control-allow-origin": "*",
+    "access-control-allow-methods": "GET,POST,OPTIONS",
+    "access-control-allow-headers": "content-type,x-user-id,x-hub-signature-256"
+  });
+  res.end(String(payload));
 }
 
 async function serveStatic(res, pathname) {

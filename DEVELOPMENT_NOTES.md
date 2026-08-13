@@ -121,6 +121,7 @@ All lead list pages should use the shared table style and fixed headings. Campai
 Current known improvement planned:
 
 - Add search across pages or global lead search.
+- Complete WhatsApp automation rollout from `feature/whatsapp-automation`.
 
 ## UI Decisions
 
@@ -170,3 +171,40 @@ git status --short --branch
 - Do not add recurring Google Sheet sync without considering quota and Render Free limits. Prefer 5 or 10 minutes if auto-sync is added.
 - Direct Meta integration can be added later through webhook endpoints, but keep Google Sheet sync as backup during transition.
 - Before making deployment-related changes, check Render env variables and avoid committing secrets.
+
+## WhatsApp Automation Branch
+
+Work branch:
+
+- `feature/whatsapp-automation`
+
+Planned provider:
+
+- Meta WhatsApp Cloud API first.
+
+Callback URL:
+
+```text
+https://nanddmahal-leadmanagement.onrender.com/api/webhooks/whatsapp/meta
+```
+
+Required Render env vars:
+
+- `WHATSAPP_PROVIDER=meta`
+- `WHATSAPP_VERIFY_TOKEN`
+- `WHATSAPP_APP_SECRET`
+- `WHATSAPP_ACCESS_TOKEN`
+- `WHATSAPP_PHONE_NUMBER_ID`
+- `WHATSAPP_BUSINESS_ACCOUNT_ID`
+- `WHATSAPP_API_VERSION`
+- `WHATSAPP_WEBHOOK_REQUIRE_SIGNATURE=true`
+
+Implementation notes:
+
+- `GET /api/webhooks/whatsapp/meta` verifies Meta webhook setup by returning `hub.challenge`.
+- `POST /api/webhooks/whatsapp/meta` receives inbound messages and delivery/read/failed status events.
+- Webhook POST verification uses Meta `X-Hub-Signature-256` and the raw request body.
+- WhatsApp events are stored separately and important events are also added to `lead_activities`.
+- Inbound messages are matched to CRM leads by normalized phone number.
+- Manual template sending is available from lead detail only when Render WhatsApp send env vars are configured.
+- Do not enable fully automatic outbound messages until consent, opt-out, template approval, and retry policy are finalized.

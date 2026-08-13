@@ -150,7 +150,8 @@ h2 {
 .sync-strip,
 .login-card,
 .modal,
-.info {
+.info,
+.whatsapp-panel {
   background: #fff;
   border: 1px solid #dde3ea;
   border-radius: 8px;
@@ -440,6 +441,72 @@ dd {
   margin: 16px 0 20px;
 }
 
+.whatsapp-panel {
+  margin: 0 0 20px;
+  padding: 14px;
+  display: grid;
+  gap: 12px;
+}
+
+.panel-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.panel-heading h2 {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 4px;
+}
+
+.whatsapp-send {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) 120px minmax(220px, 1.4fr) auto;
+  gap: 10px;
+  align-items: end;
+}
+
+.whatsapp-send label {
+  display: grid;
+  gap: 5px;
+  font-size: 13px;
+  color: #475467;
+}
+
+.whatsapp-send input {
+  min-height: 40px;
+  border: 1px solid #cfd6df;
+  border-radius: 8px;
+  padding: 8px 10px;
+  background: #fff;
+}
+
+.whatsapp-history {
+  display: grid;
+  gap: 8px;
+}
+
+.whatsapp-message {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 10px;
+  padding: 10px;
+  border: 1px solid #e7ebf0;
+  border-radius: 8px;
+}
+
+.whatsapp-message p {
+  margin: 4px 0;
+}
+
+.success-text {
+  color: #146c2e;
+  margin-bottom: 0;
+}
+
 .timeline {
   display: grid;
   gap: 10px;
@@ -569,9 +636,14 @@ blockquote {
   }
 
   .sync-strip,
-  .detail-header {
+  .detail-header,
+  .panel-heading {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .whatsapp-send {
+    grid-template-columns: 1fr;
   }
 
   .search-box,
