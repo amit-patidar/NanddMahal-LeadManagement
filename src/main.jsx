@@ -80,6 +80,7 @@ function App() {
       </aside>
 
       <main className="main">
+        <GlobalSearch openLead={setSelectedLeadId} />
         {selectedLeadId ? (
           <LeadDetail id={selectedLeadId} user={user} onBack={() => setSelectedLeadId(null)} onChanged={() => {}} />
         ) : (
@@ -96,6 +97,85 @@ function App() {
           />
         )}
       </main>
+    </div>
+  );
+}
+
+function GlobalSearch({ openLead }) {
+  const [term, setTerm] = useState("");
+  const [results, setResults] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [open, setOpen] = useState(false);
+
+  useEffect(() => {
+    const query = term.trim();
+    if (query.length < 2) {
+      setResults([]);
+      setOpen(false);
+      return;
+    }
+
+    let cancelled = false;
+    const timer = setTimeout(async () => {
+      setLoading(true);
+      try {
+        const params = new URLSearchParams({ search: query });
+        const data = await request(`/leads?${params}`);
+        if (!cancelled) {
+          setResults(data.slice(0, 8));
+          setOpen(true);
+        }
+      } catch {
+        if (!cancelled) {
+          setResults([]);
+          setOpen(true);
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }, 250);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [term]);
+
+  function choose(lead) {
+    openLead(lead.id);
+    setTerm("");
+    setResults([]);
+    setOpen(false);
+  }
+
+  return (
+    <div className="global-search">
+      <label className="global-search-box">
+        <Search size={17} />
+        <input
+          value={term}
+          onChange={(e) => setTerm(e.target.value)}
+          onFocus={() => term.trim().length >= 2 && setOpen(true)}
+          placeholder="Search name, phone, email, or lead ID"
+        />
+      </label>
+      {open && (
+        <div className="global-search-results">
+          {loading ? (
+            <p className="muted">Searching...</p>
+          ) : results.length ? results.map((lead) => (
+            <button key={lead.id} type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => choose(lead)}>
+              <span>
+                <strong>{lead.name}</strong>
+                <small>{lead.phone} {lead.email ? `- ${lead.email}` : ""}</small>
+              </span>
+              <StatusBadge status={lead.status} />
+            </button>
+          )) : (
+            <p className="muted">No matching leads found.</p>
+          )}
+        </div>
+      )}
     </div>
   );
 }

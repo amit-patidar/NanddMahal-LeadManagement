@@ -120,12 +120,12 @@ All lead list pages should use the shared table style and fixed headings. Campai
 
 Current known improvement planned:
 
-- Add search across pages or global lead search.
 - Complete WhatsApp automation rollout from `feature/whatsapp-automation`.
 
 ## UI Decisions
 
 - Use full available page width for lead tables.
+- Keep global lead search visible above pages. It searches name, phone, email, and Meta lead ID and opens lead detail directly.
 - Keep rows table-like, not card-heavy.
 - Keep row separator lines continuous across columns.
 - Keep action buttons compact.

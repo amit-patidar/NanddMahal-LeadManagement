@@ -225,7 +225,12 @@ async function listLeads(query) {
     params.assignedTo = Number(query.assignedTo);
   }
   if (query.search) {
-    clauses.push("(LOWER(l.name) LIKE :search OR l.phone LIKE :search)");
+    clauses.push(`(
+      LOWER(l.name) LIKE :search
+      OR l.phone LIKE :search
+      OR LOWER(COALESCE(l.email, '')) LIKE :search
+      OR LOWER(l.meta_lead_id) LIKE :search
+    )`);
     params.search = `%${query.search.toLowerCase()}%`;
   }
 

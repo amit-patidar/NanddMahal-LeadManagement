@@ -116,6 +116,78 @@ nav button:hover {
   max-width: none;
 }
 
+.global-search {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  width: min(680px, 100%);
+  margin-bottom: 16px;
+}
+
+.global-search-box {
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  border: 1px solid #cfd6df;
+  border-radius: 8px;
+  padding: 0 12px;
+  background: #fff;
+  box-shadow: 0 8px 22px rgb(16 24 40 / 0.06);
+}
+
+.global-search-box input {
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+}
+
+.global-search-results {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  display: grid;
+  gap: 4px;
+  max-height: 360px;
+  overflow: auto;
+  padding: 8px;
+  border: 1px solid #dde3ea;
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 18px 40px rgb(16 24 40 / 0.16);
+}
+
+.global-search-results button {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+  width: 100%;
+  padding: 10px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  text-align: left;
+}
+
+.global-search-results button:hover {
+  background: #f7f8fa;
+}
+
+.global-search-results small {
+  display: block;
+  margin-top: 3px;
+  color: #667085;
+}
+
+.global-search-results p {
+  margin: 0;
+  padding: 10px;
+}
+
 .page-header {
   display: flex;
   justify-content: space-between;
@@ -638,6 +710,10 @@ blockquote {
 @media (max-width: 560px) {
   .main {
     padding: 14px;
+  }
+
+  .global-search {
+    position: relative;
   }
 
   .dashboard-grid,
