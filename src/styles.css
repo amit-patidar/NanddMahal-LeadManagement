@@ -536,7 +536,7 @@ dd {
 
 .whatsapp-send {
   display: grid;
-  grid-template-columns: minmax(180px, 1fr) 120px minmax(220px, 1.2fr) minmax(240px, 1.4fr) auto;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   gap: 10px;
   align-items: end;
 }
@@ -548,7 +548,8 @@ dd {
   color: #475467;
 }
 
-.whatsapp-send input {
+.whatsapp-send input,
+.whatsapp-send select {
   min-height: 40px;
   border: 1px solid #cfd6df;
   border-radius: 8px;
@@ -556,8 +557,30 @@ dd {
   background: #fff;
 }
 
+.template-summary {
+  min-height: 40px;
+  display: grid;
+  align-content: center;
+  gap: 2px;
+  padding: 8px 10px;
+  border: 1px solid #e7ebf0;
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
 .template-media-field {
   min-width: 0;
+}
+
+.template-tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.template-preview {
+  flex-basis: 100%;
 }
 
 .whatsapp-reply {
@@ -592,6 +615,18 @@ dd {
   gap: 8px;
 }
 
+.whatsapp-history-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: center;
+}
+
+.whatsapp-history-head small {
+  display: block;
+  margin-top: 2px;
+}
+
 .whatsapp-message {
   display: grid;
   grid-template-columns: auto 1fr;
@@ -601,8 +636,32 @@ dd {
   border-radius: 8px;
 }
 
+.failed-message {
+  border-color: #f0b5b5;
+  background: #fffafa;
+}
+
 .whatsapp-message p {
   margin: 4px 0;
+}
+
+.failure-log {
+  margin-top: 8px;
+  display: grid;
+  gap: 3px;
+  padding: 8px;
+  border-radius: 8px;
+  background: #fff0f0;
+  color: #7a1111;
+}
+
+.failure-log summary {
+  cursor: pointer;
+}
+
+.failure-log p {
+  margin-bottom: 0;
+  overflow-wrap: anywhere;
 }
 
 .success-text {

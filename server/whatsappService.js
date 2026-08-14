@@ -8,9 +8,9 @@ import {
   recordWhatsAppMessage,
   whatsappMessagesForLead
 } from "./db.js";
-import { sendMetaTemplateMessage, sendMetaTextMessage, whatsappStatus } from "./whatsappProvider.js";
+import { getApprovedMetaTemplates, sendMetaTemplateMessage, sendMetaTextMessage, whatsappStatus } from "./whatsappProvider.js";
 
-export { whatsappMessagesForLead, whatsappStatus };
+export { getApprovedMetaTemplates, whatsappMessagesForLead, whatsappStatus };
 
 const REPLY_WINDOW_HOURS = 24;
 

@@ -126,8 +126,10 @@ The same callback route handles Meta verification with `GET` and incoming webhoo
 The lead detail WhatsApp panel supports:
 
 - Approved template sends for business-initiated messages.
+- Approved-template dropdown loaded from Meta WhatsApp Manager.
 - Image-header templates by entering a public HTTPS header image URL.
 - Direct/free-text replies only when the lead has an inbound WhatsApp message inside the 24-hour customer service window.
+- Inline failed-message reasons and a WhatsApp-only message refresh button.
 
 ### 4. Import Local Data Into Render PostgreSQL
 

@@ -22,6 +22,7 @@ import { syncGoogleSheet } from "./sheetsSync.js";
 import { verifyMetaChallenge, verifyMetaSignature } from "./whatsappProvider.js";
 import { parseMetaWebhook } from "./whatsappWebhook.js";
 import {
+  getApprovedMetaTemplates,
   processWhatsAppEvents,
   sendLeadWhatsAppText,
   sendLeadWhatsAppTemplate,
@@ -71,6 +72,14 @@ const server = http.createServer(async (req, res) => {
 
     if (req.method === "GET" && url.pathname === "/api/whatsapp/status") {
       return json(res, 200, whatsappStatus());
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/whatsapp/templates") {
+      return json(res, 200, await getApprovedMetaTemplates());
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/whatsapp/templates/refresh") {
+      return json(res, 200, await getApprovedMetaTemplates({ force: true }));
     }
 
     if (req.method === "GET" && url.pathname === "/api/users") {

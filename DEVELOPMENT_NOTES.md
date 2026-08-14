@@ -207,6 +207,9 @@ Implementation notes:
 - WhatsApp events are stored separately and important events are also added to `lead_activities`.
 - Inbound messages are matched to CRM leads by normalized phone number.
 - Manual template sending is available from lead detail only when Render WhatsApp send env vars are configured.
+- Approved templates are loaded from Meta through `GET /api/whatsapp/templates` and cached briefly in memory. Use `POST /api/whatsapp/templates/refresh` to bypass cache.
 - For templates with image headers, the CRM sends a Meta `header` image component from the Header Image URL field.
 - Direct/free-text replies are available from lead detail only when the backend finds an inbound WhatsApp message for that lead inside the last 24 hours.
+- WhatsApp failed messages show inline reason, provider error code, failed time, and expandable details from the stored webhook payload.
+- The WhatsApp panel refresh button reloads only lead-specific WhatsApp messages and reply-window status, not the whole lead page.
 - Do not enable fully automatic outbound messages until consent, opt-out, template approval, and retry policy are finalized.

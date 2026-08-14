@@ -571,31 +571,101 @@ function LeadDetail({ id, user, onBack }) {
 }
 
 function WhatsAppPanel({ lead, user, status, messages, replyWindow, onChanged }) {
-  const [templateName, setTemplateName] = useState("");
-  const [language, setLanguage] = useState("en");
-  const [parameters, setParameters] = useState("");
+  const [localMessages, setLocalMessages] = useState(messages);
+  const [localReplyWindow, setLocalReplyWindow] = useState(replyWindow);
+  const [templates, setTemplates] = useState([]);
+  const [templatesLoading, setTemplatesLoading] = useState(false);
+  const [templatesError, setTemplatesError] = useState("");
+  const [selectedTemplateId, setSelectedTemplateId] = useState("");
+  const [bodyParameters, setBodyParameters] = useState([]);
   const [headerImageUrl, setHeaderImageUrl] = useState("");
   const [replyText, setReplyText] = useState("");
   const [sending, setSending] = useState(false);
   const [replying, setReplying] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [refreshError, setRefreshError] = useState("");
+  const [lastRefreshedAt, setLastRefreshedAt] = useState("");
   const [message, setMessage] = useState("");
-  const canReply = Boolean(status?.sendConfigured && replyWindow?.open);
+  const selectedTemplate = templates.find((template) => template.id === selectedTemplateId);
+  const canReply = Boolean(status?.sendConfigured && localReplyWindow?.open);
+  const unsupportedHeader = selectedTemplate?.headerVariableCount > 0 && selectedTemplate?.headerType === "TEXT";
+  const headerImageMissing = selectedTemplate?.requiresHeaderImage && !headerImageUrl.trim();
+  const missingBodyParameters = bodyParameters.some((value) => !value.trim());
+  const canSendTemplate = Boolean(status?.sendConfigured && selectedTemplate && !unsupportedHeader && !headerImageMissing && !missingBodyParameters);
+
+  useEffect(() => {
+    setLocalMessages(messages);
+  }, [messages]);
+
+  useEffect(() => {
+    setLocalReplyWindow(replyWindow);
+  }, [replyWindow]);
+
+  useEffect(() => {
+    loadTemplates();
+  }, []);
+
+  useEffect(() => {
+    if (!selectedTemplate) {
+      setBodyParameters([]);
+      setHeaderImageUrl("");
+      return;
+    }
+    setBodyParameters(Array.from({ length: selectedTemplate.bodyVariableCount || 0 }, () => ""));
+    setHeaderImageUrl("");
+  }, [selectedTemplateId]);
+
+  async function loadTemplates(force = false) {
+    setTemplatesLoading(true);
+    setTemplatesError("");
+    try {
+      const result = await request(force ? "/whatsapp/templates/refresh" : "/whatsapp/templates", { method: force ? "POST" : "GET" });
+      const nextTemplates = result.templates || [];
+      setTemplates(nextTemplates);
+      if ((!selectedTemplateId || !nextTemplates.some((template) => template.id === selectedTemplateId)) && nextTemplates[0]) {
+        setSelectedTemplateId(nextTemplates[0].id);
+      }
+    } catch (err) {
+      setTemplatesError(err.message);
+    } finally {
+      setTemplatesLoading(false);
+    }
+  }
+
+  async function refreshMessages() {
+    setRefreshing(true);
+    setRefreshError("");
+    try {
+      const result = await request(`/leads/${lead.id}/whatsapp/messages`);
+      setLocalMessages(result.messages || []);
+      setLocalReplyWindow(result.replyWindow || null);
+      setLastRefreshedAt(new Date().toISOString());
+    } catch (err) {
+      setRefreshError(err.message);
+    } finally {
+      setRefreshing(false);
+    }
+  }
 
   async function send(e) {
     e.preventDefault();
     setSending(true);
     setMessage("");
     try {
-      const params = parameters.split(",").map((item) => item.trim()).filter(Boolean);
       const result = await request(`/leads/${lead.id}/whatsapp/send`, {
         method: "POST",
-        body: { userId: user.id, templateName, language, parameters: params, headerImageUrl }
+        body: {
+          userId: user.id,
+          templateName: selectedTemplate.name,
+          language: selectedTemplate.language,
+          parameters: bodyParameters.map((item) => item.trim()),
+          headerImageUrl
+        }
       });
       setMessage(`WhatsApp template sent${result.providerMessageId ? ` (${result.providerMessageId})` : ""}.`);
-      setTemplateName("");
-      setParameters("");
+      setBodyParameters(Array.from({ length: selectedTemplate.bodyVariableCount || 0 }, () => ""));
       setHeaderImageUrl("");
-      await onChanged();
+      await refreshMessages();
     } catch (err) {
       setMessage(err.message);
     } finally {
@@ -614,10 +684,10 @@ function WhatsAppPanel({ lead, user, status, messages, replyWindow, onChanged })
       });
       setMessage(`WhatsApp reply sent${result.providerMessageId ? ` (${result.providerMessageId})` : ""}.`);
       setReplyText("");
-      await onChanged();
+      await refreshMessages();
     } catch (err) {
       setMessage(err.message);
-      await onChanged();
+      await refreshMessages();
     } finally {
       setReplying(false);
     }
@@ -636,40 +706,60 @@ function WhatsAppPanel({ lead, user, status, messages, replyWindow, onChanged })
       </div>
       <form className="whatsapp-send" onSubmit={send}>
         <label>
-          Template Name
-          <input value={templateName} onChange={(e) => setTemplateName(e.target.value)} placeholder="approved_template_name" required />
+          Template
+          <select value={selectedTemplateId} onChange={(e) => setSelectedTemplateId(e.target.value)} disabled={templatesLoading || templates.length === 0} required>
+            {templatesLoading && <option>Loading templates...</option>}
+            {!templatesLoading && templates.length === 0 && <option>No approved templates</option>}
+            {!templatesLoading && templates.map((template) => (
+              <option key={template.id} value={template.id}>
+                {template.name} - {template.language}{template.category ? ` - ${template.category}` : ""}
+              </option>
+            ))}
+          </select>
         </label>
-        <label>
-          Language
-          <input value={language} onChange={(e) => setLanguage(e.target.value)} placeholder="en" required />
-        </label>
-        <label>
-          Parameters
-          <input value={parameters} onChange={(e) => setParameters(e.target.value)} placeholder="Comma separated values" />
-        </label>
-        <label className="template-media-field">
-          Header Image URL
-          <input value={headerImageUrl} onChange={(e) => setHeaderImageUrl(e.target.value)} placeholder="https://example.com/image.jpg" />
-        </label>
-        <button className="primary" type="submit" disabled={sending || !status?.sendConfigured}>
+        <div className="template-summary">
+          <small className="muted">Language</small>
+          <strong>{selectedTemplate?.language || "-"}</strong>
+        </div>
+        {bodyParameters.map((value, index) => (
+          <label key={index}>
+            Variable {index + 1}
+            <input value={value} onChange={(e) => setBodyParameters((current) => current.map((item, itemIndex) => itemIndex === index ? e.target.value : item))} required />
+          </label>
+        ))}
+        {selectedTemplate?.requiresHeaderImage && (
+          <label className="template-media-field">
+            Header Image URL
+            <input value={headerImageUrl} onChange={(e) => setHeaderImageUrl(e.target.value)} placeholder="https://example.com/image.jpg" required />
+          </label>
+        )}
+        <button className="primary" type="submit" disabled={sending || !canSendTemplate}>
           <MessageSquareText size={16} /> {sending ? "Sending" : "Send Template"}
         </button>
       </form>
+      <div className="template-tools">
+        <button className="secondary" type="button" onClick={() => loadTemplates(true)} disabled={templatesLoading}>
+          <RefreshCw size={16} /> {templatesLoading ? "Refreshing Templates" : "Refresh Templates"}
+        </button>
+        {templatesError && <small className="error">{templatesError}</small>}
+        {selectedTemplate?.bodyText && <small className="muted template-preview">{selectedTemplate.bodyText}</small>}
+        {unsupportedHeader && <small className="error">Text header variables are not supported yet. Use an image-header or body-only template.</small>}
+      </div>
       {message && <p className={message.toLowerCase().includes("sent") ? "success-text" : "error"}>{message}</p>}
       <div className="whatsapp-history">
-        <strong>Recent WhatsApp Activity</strong>
-        {messages.length === 0 ? (
-          <p className="muted">No WhatsApp messages recorded for this lead yet.</p>
-        ) : messages.map((item) => (
-          <div className="whatsapp-message" key={item.id}>
-            <span className="badge">{item.status}</span>
-            <div>
-              <strong>{item.direction} {item.message_type}</strong>
-              <p>{item.body || item.template_name || item.error_message || "-"}</p>
-              <small className="muted">{formatDateTime(item.created_at)}</small>
-            </div>
+        <div className="whatsapp-history-head">
+          <div>
+            <strong>Recent WhatsApp Activity</strong>
+            {lastRefreshedAt && <small className="muted">Updated {formatDateTime(lastRefreshedAt)}</small>}
           </div>
-        ))}
+          <button className="secondary" type="button" onClick={refreshMessages} disabled={refreshing} aria-label="Refresh WhatsApp messages">
+            <RefreshCw size={16} /> {refreshing ? "Refreshing" : "Refresh"}
+          </button>
+        </div>
+        {refreshError && <small className="error">{refreshError}</small>}
+        {localMessages.length === 0 ? (
+          <p className="muted">No WhatsApp messages recorded for this lead yet.</p>
+        ) : localMessages.map((item) => <WhatsAppMessage key={item.id} item={item} />)}
       </div>
       <form className="whatsapp-reply" onSubmit={sendReply}>
         <label>
@@ -683,13 +773,40 @@ function WhatsAppPanel({ lead, user, status, messages, replyWindow, onChanged })
           />
         </label>
         <div className="reply-footer">
-          <small className="muted">{replyWindowText(replyWindow)}</small>
+          <small className="muted">{replyWindowText(localReplyWindow)}</small>
           <button className="secondary" type="submit" disabled={!canReply || replying || !replyText.trim()}>
             {replying ? "Sending Reply" : "Send Reply"}
           </button>
         </div>
       </form>
     </section>
+  );
+}
+
+function WhatsAppMessage({ item }) {
+  const failure = failureDetails(item);
+  return (
+    <div className={`whatsapp-message ${item.status === "failed" ? "failed-message" : ""}`}>
+      <span className="badge">{item.status}</span>
+      <div>
+        <strong>{item.direction} {item.message_type}</strong>
+        <p>{item.body || item.template_name || item.error_message || "-"}</p>
+        <small className="muted">{formatDateTime(item.created_at)}</small>
+        {item.status === "failed" && (
+          <div className="failure-log">
+            <strong>Failed: {failure.reason}</strong>
+            <small>Code: {failure.code}</small>
+            <small>Failed at: {formatDateTime(item.failed_at || item.created_at)}</small>
+            {failure.details && (
+              <details>
+                <summary>Details</summary>
+                <p>{failure.details}</p>
+              </details>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
   );
 }
 
@@ -794,6 +911,26 @@ function replyWindowText(replyWindow) {
     return "The 24-hour reply window has expired. Send an approved template instead.";
   }
   return "Free-text replies unlock after the customer replies on WhatsApp.";
+}
+
+function failureDetails(item) {
+  const raw = parseRawPayload(item.raw_payload);
+  const error = raw?.status?.errors?.[0] || raw?.error || raw?.entry?.[0]?.changes?.[0]?.value?.statuses?.[0]?.errors?.[0];
+  return {
+    reason: item.error_message || error?.title || error?.message || "No failure reason provided",
+    code: item.error_code || error?.code || error?.error_subcode || "-",
+    details: error?.error_data?.details || error?.message || ""
+  };
+}
+
+function parseRawPayload(value) {
+  if (!value) return null;
+  if (typeof value === "object") return value;
+  try {
+    return JSON.parse(value);
+  } catch {
+    return null;
+  }
 }
 
 function activityText(a) {
