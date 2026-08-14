@@ -50,19 +50,29 @@ export function verifyMetaSignature(rawBody, signatureHeader) {
   return timingSafeEqual(expected, received);
 }
 
-export async function sendMetaTemplateMessage({ to, templateName, language = "en", parameters = [] }) {
+export async function sendMetaTemplateMessage({ to, templateName, language = "en", parameters = [], headerImageUrl = "" }) {
   const config = whatsappConfig();
   if (!config.accessToken || !config.phoneNumberId) {
     throw new Error("WhatsApp sending is not configured. Add WHATSAPP_ACCESS_TOKEN and WHATSAPP_PHONE_NUMBER_ID.");
   }
   if (!templateName) throw new Error("Template name is required.");
 
-  const components = parameters.length
-    ? [{
+  const components = [];
+  if (headerImageUrl?.trim()) {
+    components.push({
+      type: "header",
+      parameters: [{
+        type: "image",
+        image: { link: headerImageUrl.trim() }
+      }]
+    });
+  }
+  if (parameters.length) {
+    components.push({
         type: "body",
         parameters: parameters.map((value) => ({ type: "text", text: String(value ?? "") }))
-      }]
-    : undefined;
+      });
+  }
 
   const response = await fetch(`https://graph.facebook.com/${config.apiVersion}/${config.phoneNumberId}/messages`, {
     method: "POST",
@@ -77,7 +87,7 @@ export async function sendMetaTemplateMessage({ to, templateName, language = "en
       template: {
         name: templateName,
         language: { code: language },
-        ...(components ? { components } : {})
+        ...(components.length ? { components } : {})
       }
     })
   });

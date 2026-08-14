@@ -574,6 +574,7 @@ function WhatsAppPanel({ lead, user, status, messages, replyWindow, onChanged })
   const [templateName, setTemplateName] = useState("");
   const [language, setLanguage] = useState("en");
   const [parameters, setParameters] = useState("");
+  const [headerImageUrl, setHeaderImageUrl] = useState("");
   const [replyText, setReplyText] = useState("");
   const [sending, setSending] = useState(false);
   const [replying, setReplying] = useState(false);
@@ -588,11 +589,12 @@ function WhatsAppPanel({ lead, user, status, messages, replyWindow, onChanged })
       const params = parameters.split(",").map((item) => item.trim()).filter(Boolean);
       const result = await request(`/leads/${lead.id}/whatsapp/send`, {
         method: "POST",
-        body: { userId: user.id, templateName, language, parameters: params }
+        body: { userId: user.id, templateName, language, parameters: params, headerImageUrl }
       });
       setMessage(`WhatsApp template sent${result.providerMessageId ? ` (${result.providerMessageId})` : ""}.`);
       setTemplateName("");
       setParameters("");
+      setHeaderImageUrl("");
       await onChanged();
     } catch (err) {
       setMessage(err.message);
@@ -644,6 +646,10 @@ function WhatsAppPanel({ lead, user, status, messages, replyWindow, onChanged })
         <label>
           Parameters
           <input value={parameters} onChange={(e) => setParameters(e.target.value)} placeholder="Comma separated values" />
+        </label>
+        <label className="template-media-field">
+          Header Image URL
+          <input value={headerImageUrl} onChange={(e) => setHeaderImageUrl(e.target.value)} placeholder="https://example.com/image.jpg" />
         </label>
         <button className="primary" type="submit" disabled={sending || !status?.sendConfigured}>
           <MessageSquareText size={16} /> {sending ? "Sending" : "Send Template"}

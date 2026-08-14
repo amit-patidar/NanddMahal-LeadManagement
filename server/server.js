@@ -144,7 +144,8 @@ const server = http.createServer(async (req, res) => {
         userId: currentUserId(req, body),
         templateName: body.templateName,
         language: body.language || "en",
-        parameters: Array.isArray(body.parameters) ? body.parameters : []
+        parameters: Array.isArray(body.parameters) ? body.parameters : [],
+        headerImageUrl: body.headerImageUrl || ""
       });
       return json(res, 200, result);
     }

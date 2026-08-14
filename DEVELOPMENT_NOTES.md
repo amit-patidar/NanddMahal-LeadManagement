@@ -207,5 +207,6 @@ Implementation notes:
 - WhatsApp events are stored separately and important events are also added to `lead_activities`.
 - Inbound messages are matched to CRM leads by normalized phone number.
 - Manual template sending is available from lead detail only when Render WhatsApp send env vars are configured.
+- For templates with image headers, the CRM sends a Meta `header` image component from the Header Image URL field.
 - Direct/free-text replies are available from lead detail only when the backend finds an inbound WhatsApp message for that lead inside the last 24 hours.
 - Do not enable fully automatic outbound messages until consent, opt-out, template approval, and retry policy are finalized.

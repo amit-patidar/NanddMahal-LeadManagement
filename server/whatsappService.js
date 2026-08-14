@@ -22,14 +22,14 @@ export async function processWhatsAppEvents(events) {
   return results;
 }
 
-export async function sendLeadWhatsAppTemplate({ leadId, userId, templateName, language = "en", parameters = [] }) {
+export async function sendLeadWhatsAppTemplate({ leadId, userId, templateName, language = "en", parameters = [], headerImageUrl = "" }) {
   const lead = await get("SELECT * FROM leads WHERE id = :leadId", { leadId });
   if (!lead) throw new Error("Lead not found");
 
   const to = normalizePhone(lead.phone);
   if (!to) throw new Error("Lead phone number is missing or invalid.");
 
-  const providerPayload = await sendMetaTemplateMessage({ to, templateName, language, parameters });
+  const providerPayload = await sendMetaTemplateMessage({ to, templateName, language, parameters, headerImageUrl });
   const providerMessageId = providerPayload.messages?.[0]?.id || null;
   const now = new Date().toISOString();
 
@@ -40,6 +40,7 @@ export async function sendLeadWhatsAppTemplate({ leadId, userId, templateName, l
     direction: "outbound",
     messageType: "template",
     templateName,
+    body: headerImageUrl ? `Header image: ${headerImageUrl}` : null,
     phone: to,
     status: "sent",
     sentByUserId: userId,
