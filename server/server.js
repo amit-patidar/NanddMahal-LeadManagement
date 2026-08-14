@@ -88,7 +88,7 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (req.method === "POST" && url.pathname === "/api/whatsapp/media") {
-      const rawBody = await readRaw(req);
+      const rawBody = await readRaw(req, 6 * 1024 * 1024);
       const upload = parseMultipartUpload(rawBody, req.headers["content-type"] || "");
       if (!upload.file) throw new Error("Image file is required.");
       const asset = await uploadWhatsAppMedia({ file: upload.file, userId: currentUserId(req, upload.fields) });
@@ -428,10 +428,9 @@ async function readJson(req) {
   return raw.length ? JSON.parse(raw.toString("utf8")) : {};
 }
 
-async function readRaw(req) {
+async function readRaw(req, limit = 1024 * 1024) {
   const chunks = [];
   let size = 0;
-  const limit = 1024 * 1024;
   for await (const chunk of req) {
     size += chunk.length;
     if (size > limit) throw new Error("Request body too large");

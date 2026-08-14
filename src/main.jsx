@@ -790,10 +790,17 @@ function WhatsAppPanel({ lead, user, status, messages, replyWindow, onChanged })
         {selectedTemplate?.bodyText && <small className="muted template-preview">{selectedTemplate.bodyText}</small>}
         {unsupportedHeader && <small className="error">Text header variables are not supported yet. Use an image-header or body-only template.</small>}
       </div>
-      {selectedTemplate?.requiresHeaderImage && (
+      {status?.mediaLibrary?.configured && (
         <div className="media-library">
           <div className="media-library-head">
-            <strong>Header Image Library</strong>
+            <div>
+              <strong>Header Image Library</strong>
+              <small className="muted">
+                {selectedTemplate?.requiresHeaderImage
+                  ? "Select or upload a public header image for this template."
+                  : "Saved images are available when an image-header template is selected."}
+              </small>
+            </div>
             <div className="media-actions">
               <button className="secondary" type="button" onClick={loadMedia} disabled={mediaLoading}>
                 <RefreshCw size={16} /> {mediaLoading ? "Refreshing" : "Refresh Images"}
@@ -816,6 +823,9 @@ function WhatsAppPanel({ lead, user, status, messages, replyWindow, onChanged })
           {headerImageUrl && <img className="media-preview" src={headerImageUrl} alt="Selected WhatsApp header" />}
           {mediaError && <small className="error">{mediaError}</small>}
         </div>
+      )}
+      {selectedTemplate?.requiresHeaderImage && !status?.mediaLibrary?.configured && (
+        <small className="error">Cloudinary image upload is not configured on this service.</small>
       )}
       {message && <p className={message.toLowerCase().includes("sent") ? "success-text" : "error"}>{message}</p>}
       <div className="whatsapp-history">
