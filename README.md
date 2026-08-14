@@ -102,10 +102,16 @@ Use either the three Google fields above or the full JSON field, not both.
 
 The WhatsApp automation work lives on the `feature/whatsapp-automation` branch until it is ready to merge.
 
-Meta callback URL:
+Production Meta callback URL:
 
 ```text
 https://nanddmahal-leadmanagement.onrender.com/api/webhooks/whatsapp/meta
+```
+
+Test branch callback URL:
+
+```text
+https://nanddmahal-leadmanagement-1.onrender.com/api/webhooks/whatsapp/meta
 ```
 
 Render environment variables:
@@ -128,11 +134,11 @@ The lead detail WhatsApp panel supports:
 - Approved template sends for business-initiated messages.
 - Approved-template dropdown loaded from Meta WhatsApp Manager.
 - Image-header templates by entering a public HTTPS header image URL.
-- Cloudinary-backed media library for reusable WhatsApp header images.
+- Cloudinary-backed media library for reusable WhatsApp header images, including upload, refresh, saved-image dropdown, and preview.
 - Direct/free-text replies only when the lead has an inbound WhatsApp message inside the 24-hour customer service window.
 - Inline failed-message reasons and a WhatsApp-only message refresh button.
 
-Cloudinary env vars:
+Cloudinary env vars for WhatsApp image uploads:
 
 ```bash
 CLOUDINARY_CLOUD_NAME=<cloud name>
@@ -140,6 +146,8 @@ CLOUDINARY_API_KEY=<api key>
 CLOUDINARY_API_SECRET=<api secret>
 CLOUDINARY_WHATSAPP_FOLDER=nandd-mahal/whatsapp-headers
 ```
+
+When Cloudinary is configured, the WhatsApp panel shows **Header Image Library** with **Upload Image** and **Refresh Images**. Uploaded files are stored in Cloudinary and their public URLs are saved in the CRM database for reuse. Keep WhatsApp header images under 6 MB.
 
 ### 4. Import Local Data Into Render PostgreSQL
 
