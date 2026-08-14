@@ -579,6 +579,11 @@ function WhatsAppPanel({ lead, user, status, messages, replyWindow, onChanged })
   const [selectedTemplateId, setSelectedTemplateId] = useState("");
   const [bodyParameters, setBodyParameters] = useState([]);
   const [headerImageUrl, setHeaderImageUrl] = useState("");
+  const [mediaAssets, setMediaAssets] = useState([]);
+  const [selectedMediaId, setSelectedMediaId] = useState("");
+  const [mediaLoading, setMediaLoading] = useState(false);
+  const [mediaUploading, setMediaUploading] = useState(false);
+  const [mediaError, setMediaError] = useState("");
   const [replyText, setReplyText] = useState("");
   const [sending, setSending] = useState(false);
   const [replying, setReplying] = useState(false);
@@ -603,6 +608,7 @@ function WhatsAppPanel({ lead, user, status, messages, replyWindow, onChanged })
 
   useEffect(() => {
     loadTemplates();
+    loadMedia();
   }, []);
 
   useEffect(() => {
@@ -613,7 +619,13 @@ function WhatsAppPanel({ lead, user, status, messages, replyWindow, onChanged })
     }
     setBodyParameters(Array.from({ length: selectedTemplate.bodyVariableCount || 0 }, () => ""));
     setHeaderImageUrl("");
+    setSelectedMediaId("");
   }, [selectedTemplateId]);
+
+  useEffect(() => {
+    const asset = mediaAssets.find((item) => String(item.id) === String(selectedMediaId));
+    if (asset) setHeaderImageUrl(asset.secure_url || asset.secureUrl || asset.url);
+  }, [selectedMediaId, mediaAssets]);
 
   async function loadTemplates(force = false) {
     setTemplatesLoading(true);
@@ -644,6 +656,39 @@ function WhatsAppPanel({ lead, user, status, messages, replyWindow, onChanged })
       setRefreshError(err.message);
     } finally {
       setRefreshing(false);
+    }
+  }
+
+  async function loadMedia() {
+    setMediaLoading(true);
+    setMediaError("");
+    try {
+      setMediaAssets(await request("/whatsapp/media"));
+    } catch (err) {
+      setMediaError(err.message);
+    } finally {
+      setMediaLoading(false);
+    }
+  }
+
+  async function uploadMedia(e) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    setMediaUploading(true);
+    setMediaError("");
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("userId", String(user.id));
+      const asset = await uploadRequest("/whatsapp/media", formData);
+      await loadMedia();
+      setSelectedMediaId(String(asset.id));
+      setHeaderImageUrl(asset.secure_url || asset.secureUrl || asset.url);
+    } catch (err) {
+      setMediaError(err.message);
+    } finally {
+      setMediaUploading(false);
     }
   }
 
@@ -745,6 +790,33 @@ function WhatsAppPanel({ lead, user, status, messages, replyWindow, onChanged })
         {selectedTemplate?.bodyText && <small className="muted template-preview">{selectedTemplate.bodyText}</small>}
         {unsupportedHeader && <small className="error">Text header variables are not supported yet. Use an image-header or body-only template.</small>}
       </div>
+      {selectedTemplate?.requiresHeaderImage && (
+        <div className="media-library">
+          <div className="media-library-head">
+            <strong>Header Image Library</strong>
+            <div className="media-actions">
+              <button className="secondary" type="button" onClick={loadMedia} disabled={mediaLoading}>
+                <RefreshCw size={16} /> {mediaLoading ? "Refreshing" : "Refresh Images"}
+              </button>
+              <label className="secondary file-button">
+                {mediaUploading ? "Uploading" : "Upload Image"}
+                <input type="file" accept="image/*" onChange={uploadMedia} disabled={mediaUploading} />
+              </label>
+            </div>
+          </div>
+          <label>
+            Saved Images
+            <select value={selectedMediaId} onChange={(e) => setSelectedMediaId(e.target.value)} disabled={mediaLoading || mediaAssets.length === 0}>
+              <option value="">{mediaAssets.length ? "Select saved image" : "No uploaded images"}</option>
+              {mediaAssets.map((asset) => (
+                <option key={asset.id} value={asset.id}>{asset.name}</option>
+              ))}
+            </select>
+          </label>
+          {headerImageUrl && <img className="media-preview" src={headerImageUrl} alt="Selected WhatsApp header" />}
+          {mediaError && <small className="error">{mediaError}</small>}
+        </div>
+      )}
       {message && <p className={message.toLowerCase().includes("sent") ? "success-text" : "error"}>{message}</p>}
       <div className="whatsapp-history">
         <div className="whatsapp-history-head">
@@ -965,6 +1037,16 @@ async function request(path, options = {}) {
   });
   const data = await response.json();
   if (!response.ok) throw new Error(data.error || "Request failed");
+  return data;
+}
+
+async function uploadRequest(path, formData) {
+  const response = await fetch(`${API}${path}`, {
+    method: "POST",
+    body: formData
+  });
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.error || "Upload failed");
   return data;
 }
 

@@ -209,6 +209,7 @@ Implementation notes:
 - Manual template sending is available from lead detail only when Render WhatsApp send env vars are configured.
 - Approved templates are loaded from Meta through `GET /api/whatsapp/templates` and cached briefly in memory. Use `POST /api/whatsapp/templates/refresh` to bypass cache.
 - For templates with image headers, the CRM sends a Meta `header` image component from the Header Image URL field.
+- WhatsApp header image uploads use Cloudinary. The file is stored in Cloudinary, while CRM stores only metadata and the public HTTPS URL in `whatsapp_media_assets`.
 - Direct/free-text replies are available from lead detail only when the backend finds an inbound WhatsApp message for that lead inside the last 24 hours.
 - WhatsApp failed messages show inline reason, provider error code, failed time, and expandable details from the stored webhook payload.
 - The WhatsApp panel refresh button reloads only lead-specific WhatsApp messages and reply-window status, not the whole lead page.

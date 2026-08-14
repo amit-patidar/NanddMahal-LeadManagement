@@ -131,6 +131,22 @@ export async function initDb() {
         processing_status TEXT NOT NULL
       );
 
+      CREATE TABLE IF NOT EXISTS whatsapp_media_assets (
+        id SERIAL PRIMARY KEY,
+        name TEXT NOT NULL,
+        provider TEXT NOT NULL DEFAULT 'cloudinary',
+        public_id TEXT,
+        url TEXT NOT NULL,
+        secure_url TEXT NOT NULL,
+        format TEXT,
+        bytes INTEGER,
+        width INTEGER,
+        height INTEGER,
+        uploaded_by_user_id INTEGER REFERENCES users(id),
+        active BOOLEAN NOT NULL DEFAULT TRUE,
+        created_at TEXT NOT NULL
+      );
+
       CREATE INDEX IF NOT EXISTS idx_leads_status ON leads(status);
       CREATE INDEX IF NOT EXISTS idx_leads_assigned_to ON leads(assigned_to);
       CREATE INDEX IF NOT EXISTS idx_leads_followup_date ON leads(followup_date);
@@ -139,6 +155,7 @@ export async function initDb() {
       CREATE INDEX IF NOT EXISTS idx_whatsapp_messages_lead_id ON whatsapp_messages(lead_id);
       CREATE INDEX IF NOT EXISTS idx_whatsapp_messages_phone ON whatsapp_messages(phone);
       CREATE INDEX IF NOT EXISTS idx_whatsapp_events_lead_id ON whatsapp_events(lead_id);
+      CREATE INDEX IF NOT EXISTS idx_whatsapp_media_assets_active ON whatsapp_media_assets(active);
     `);
   } else {
     db.exec(`
@@ -231,6 +248,23 @@ export async function initDb() {
         FOREIGN KEY (lead_id) REFERENCES leads(id) ON DELETE SET NULL
       );
 
+      CREATE TABLE IF NOT EXISTS whatsapp_media_assets (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        provider TEXT NOT NULL DEFAULT 'cloudinary',
+        public_id TEXT,
+        url TEXT NOT NULL,
+        secure_url TEXT NOT NULL,
+        format TEXT,
+        bytes INTEGER,
+        width INTEGER,
+        height INTEGER,
+        uploaded_by_user_id INTEGER,
+        active INTEGER NOT NULL DEFAULT 1,
+        created_at TEXT NOT NULL,
+        FOREIGN KEY (uploaded_by_user_id) REFERENCES users(id)
+      );
+
       CREATE INDEX IF NOT EXISTS idx_leads_status ON leads(status);
       CREATE INDEX IF NOT EXISTS idx_leads_assigned_to ON leads(assigned_to);
       CREATE INDEX IF NOT EXISTS idx_leads_followup_date ON leads(followup_date);
@@ -239,6 +273,7 @@ export async function initDb() {
       CREATE INDEX IF NOT EXISTS idx_whatsapp_messages_lead_id ON whatsapp_messages(lead_id);
       CREATE INDEX IF NOT EXISTS idx_whatsapp_messages_phone ON whatsapp_messages(phone);
       CREATE INDEX IF NOT EXISTS idx_whatsapp_events_lead_id ON whatsapp_events(lead_id);
+      CREATE INDEX IF NOT EXISTS idx_whatsapp_media_assets_active ON whatsapp_media_assets(active);
     `);
 
     await migrateSqlite();
@@ -331,6 +366,41 @@ export async function whatsappMessagesForLead(leadId) {
      LIMIT 100`,
     { leadId }
   );
+}
+
+export async function whatsappMediaAssets() {
+  return all(
+    `SELECT *
+     FROM whatsapp_media_assets
+     WHERE active = :active
+     ORDER BY created_at DESC, id DESC`,
+    { active: isPostgres ? true : 1 }
+  );
+}
+
+export async function addWhatsAppMediaAsset(asset) {
+  const createdAt = asset.createdAt || nowIso();
+  await run(
+    `INSERT INTO whatsapp_media_assets
+      (name, provider, public_id, url, secure_url, format, bytes, width, height, uploaded_by_user_id, active, created_at)
+     VALUES
+      (:name, :provider, :publicId, :url, :secureUrl, :format, :bytes, :width, :height, :uploadedByUserId, :active, :createdAt)`,
+    {
+      name: asset.name,
+      provider: asset.provider || "cloudinary",
+      publicId: asset.publicId || null,
+      url: asset.url,
+      secureUrl: asset.secureUrl,
+      format: asset.format || null,
+      bytes: asset.bytes || null,
+      width: asset.width || null,
+      height: asset.height || null,
+      uploadedByUserId: asset.uploadedByUserId || null,
+      active: isPostgres ? true : 1,
+      createdAt
+    }
+  );
+  return get("SELECT * FROM whatsapp_media_assets WHERE secure_url = :secureUrl ORDER BY id DESC LIMIT 1", { secureUrl: asset.secureUrl });
 }
 
 export async function lastInboundWhatsAppMessageForLead(leadId) {

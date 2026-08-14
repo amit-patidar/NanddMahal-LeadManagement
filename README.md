@@ -128,8 +128,18 @@ The lead detail WhatsApp panel supports:
 - Approved template sends for business-initiated messages.
 - Approved-template dropdown loaded from Meta WhatsApp Manager.
 - Image-header templates by entering a public HTTPS header image URL.
+- Cloudinary-backed media library for reusable WhatsApp header images.
 - Direct/free-text replies only when the lead has an inbound WhatsApp message inside the 24-hour customer service window.
 - Inline failed-message reasons and a WhatsApp-only message refresh button.
+
+Cloudinary env vars:
+
+```bash
+CLOUDINARY_CLOUD_NAME=<cloud name>
+CLOUDINARY_API_KEY=<api key>
+CLOUDINARY_API_SECRET=<api secret>
+CLOUDINARY_WHATSAPP_FOLDER=nandd-mahal/whatsapp-headers
+```
 
 ### 4. Import Local Data Into Render PostgreSQL
 

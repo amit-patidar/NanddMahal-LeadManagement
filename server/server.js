@@ -19,6 +19,7 @@ import {
   yesterdayDate
 } from "./db.js";
 import { syncGoogleSheet } from "./sheetsSync.js";
+import { cloudinaryStatus, listWhatsAppMedia, uploadWhatsAppMedia } from "./cloudinaryMedia.js";
 import { verifyMetaChallenge, verifyMetaSignature } from "./whatsappProvider.js";
 import { parseMetaWebhook } from "./whatsappWebhook.js";
 import {
@@ -71,7 +72,7 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (req.method === "GET" && url.pathname === "/api/whatsapp/status") {
-      return json(res, 200, whatsappStatus());
+      return json(res, 200, { ...whatsappStatus(), mediaLibrary: cloudinaryStatus() });
     }
 
     if (req.method === "GET" && url.pathname === "/api/whatsapp/templates") {
@@ -80,6 +81,18 @@ const server = http.createServer(async (req, res) => {
 
     if (req.method === "POST" && url.pathname === "/api/whatsapp/templates/refresh") {
       return json(res, 200, await getApprovedMetaTemplates({ force: true }));
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/whatsapp/media") {
+      return json(res, 200, await listWhatsAppMedia());
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/whatsapp/media") {
+      const rawBody = await readRaw(req);
+      const upload = parseMultipartUpload(rawBody, req.headers["content-type"] || "");
+      if (!upload.file) throw new Error("Image file is required.");
+      const asset = await uploadWhatsAppMedia({ file: upload.file, userId: currentUserId(req, upload.fields) });
+      return json(res, 200, asset);
     }
 
     if (req.method === "GET" && url.pathname === "/api/users") {
@@ -445,6 +458,45 @@ function text(res, status, payload) {
     "access-control-allow-headers": "content-type,x-user-id,x-hub-signature-256"
   });
   res.end(String(payload));
+}
+
+function parseMultipartUpload(rawBody, contentType) {
+  const boundaryMatch = contentType.match(/boundary=(?:"([^"]+)"|([^;]+))/i);
+  if (!boundaryMatch) throw new Error("Multipart boundary is missing.");
+  const boundary = `--${boundaryMatch[1] || boundaryMatch[2]}`;
+  const parts = rawBody.toString("binary").split(boundary).slice(1, -1);
+  const fields = {};
+  let file = null;
+
+  for (const part of parts) {
+    const trimmed = part.replace(/^\r\n/, "").replace(/\r\n$/, "");
+    const splitIndex = trimmed.indexOf("\r\n\r\n");
+    if (splitIndex < 0) continue;
+    const rawHeaders = trimmed.slice(0, splitIndex);
+    let body = trimmed.slice(splitIndex + 4);
+    if (body.endsWith("\r\n")) body = body.slice(0, -2);
+    const headers = Object.fromEntries(rawHeaders.split("\r\n").map((line) => {
+      const index = line.indexOf(":");
+      return index >= 0 ? [line.slice(0, index).toLowerCase(), line.slice(index + 1).trim()] : [line.toLowerCase(), ""];
+    }));
+    const disposition = headers["content-disposition"] || "";
+    const name = disposition.match(/name="([^"]+)"/)?.[1];
+    const filename = disposition.match(/filename="([^"]*)"/)?.[1];
+    if (!name) continue;
+
+    if (filename) {
+      file = {
+        fieldName: name,
+        filename,
+        contentType: headers["content-type"] || "application/octet-stream",
+        buffer: Buffer.from(body, "binary")
+      };
+    } else {
+      fields[name] = Buffer.from(body, "binary").toString("utf8");
+    }
+  }
+
+  return { fields, file };
 }
 
 async function serveStatic(res, pathname) {
