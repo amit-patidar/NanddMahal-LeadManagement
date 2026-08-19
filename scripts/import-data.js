@@ -1,5 +1,6 @@
 import fs from "node:fs/promises";
 import { db, initDb } from "../server/db.js";
+import { hashPassword } from "../server/passwords.js";
 
 if (!process.env.DATABASE_URL) {
   throw new Error("DATABASE_URL is required. This import is intended for PostgreSQL.");
@@ -16,10 +17,13 @@ try {
   await client.query("TRUNCATE lead_activities, leads, users RESTART IDENTITY CASCADE");
 
   for (const user of data.users) {
+    const credentials = user.password_hash && user.password_salt
+      ? { hash: user.password_hash, salt: user.password_salt }
+      : hashPassword(user.password, { enforceLength: false });
     await client.query(
-      `INSERT INTO users (id, name, email, password, role, active, created_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-      [user.id, user.name, user.email, user.password, user.role, Boolean(user.active), user.created_at]
+      `INSERT INTO users (id, name, email, password_hash, password_salt, role, active, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+      [user.id, user.name, user.email, credentials.hash, credentials.salt, user.role, Boolean(user.active), user.created_at]
     );
   }
 

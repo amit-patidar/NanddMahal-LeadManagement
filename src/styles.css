@@ -263,6 +263,74 @@ h2 {
   align-items: center;
 }
 
+.user-create-form {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(150px, 1fr)) auto;
+  gap: 10px;
+  align-items: end;
+  margin-bottom: 18px;
+  padding: 14px;
+  background: #fff;
+  border: 1px solid #dde3ea;
+  border-radius: 8px;
+}
+
+.user-create-form label,
+.detail-assignment {
+  display: grid;
+  gap: 5px;
+  color: #475467;
+  font-size: 13px;
+}
+
+.user-create-form input,
+.user-create-form select,
+.detail-assignment select {
+  min-height: 40px;
+  border: 1px solid #cfd6df;
+  border-radius: 8px;
+  padding: 8px 10px;
+  background: #fff;
+}
+
+.user-table-wrap {
+  overflow-x: auto;
+  border: 1px solid #dde3ea;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.user-table {
+  width: 100%;
+  min-width: 720px;
+  border-collapse: collapse;
+}
+
+.user-table th,
+.user-table td {
+  padding: 12px;
+  border-bottom: 1px solid #e7ebf0;
+  text-align: left;
+  vertical-align: middle;
+}
+
+.user-table th {
+  background: #f8fafc;
+  color: #475467;
+  font-size: 12px;
+  text-transform: uppercase;
+}
+
+.user-table tr:last-child td {
+  border-bottom: 0;
+}
+
+.user-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
 a {
   color: #1565c0;
   text-decoration: none;
@@ -505,6 +573,11 @@ dd {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   gap: 10px;
+}
+
+.detail-assignment {
+  width: min(280px, 100%);
+  margin-top: 12px;
 }
 
 .info {
@@ -871,6 +944,10 @@ blockquote {
   }
 
   .whatsapp-send {
+    grid-template-columns: 1fr;
+  }
+
+  .user-create-form {
     grid-template-columns: 1fr;
   }
 

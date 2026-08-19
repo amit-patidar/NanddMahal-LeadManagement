@@ -2,6 +2,7 @@ import { DatabaseSync } from "node:sqlite";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import pg from "pg";
+import { hashPassword } from "./passwords.js";
 
 const { Pool } = pg;
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -54,10 +55,19 @@ export async function initDb() {
         id SERIAL PRIMARY KEY,
         name TEXT NOT NULL,
         email TEXT UNIQUE NOT NULL,
-        password TEXT NOT NULL,
+        password_hash TEXT,
+        password_salt TEXT,
         role TEXT NOT NULL DEFAULT 'sales',
         active BOOLEAN NOT NULL DEFAULT TRUE,
         created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+      );
+
+      CREATE TABLE IF NOT EXISTS sessions (
+        id TEXT PRIMARY KEY,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        expires_at TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        last_seen_at TEXT NOT NULL
       );
 
       CREATE TABLE IF NOT EXISTS leads (
@@ -149,6 +159,8 @@ export async function initDb() {
 
       CREATE INDEX IF NOT EXISTS idx_leads_status ON leads(status);
       CREATE INDEX IF NOT EXISTS idx_leads_assigned_to ON leads(assigned_to);
+      CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id);
+      CREATE INDEX IF NOT EXISTS idx_sessions_expires_at ON sessions(expires_at);
       CREATE INDEX IF NOT EXISTS idx_leads_followup_date ON leads(followup_date);
       CREATE INDEX IF NOT EXISTS idx_leads_site_visit_date ON leads(site_visit_date);
       CREATE INDEX IF NOT EXISTS idx_activities_lead_id ON lead_activities(lead_id);
@@ -165,10 +177,20 @@ export async function initDb() {
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         name TEXT NOT NULL,
         email TEXT UNIQUE NOT NULL,
-        password TEXT NOT NULL,
+        password_hash TEXT,
+        password_salt TEXT,
         role TEXT NOT NULL DEFAULT 'sales',
         active INTEGER NOT NULL DEFAULT 1,
         created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+      );
+
+      CREATE TABLE IF NOT EXISTS sessions (
+        id TEXT PRIMARY KEY,
+        user_id INTEGER NOT NULL,
+        expires_at TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        last_seen_at TEXT NOT NULL,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
       );
 
       CREATE TABLE IF NOT EXISTS leads (
@@ -267,6 +289,8 @@ export async function initDb() {
 
       CREATE INDEX IF NOT EXISTS idx_leads_status ON leads(status);
       CREATE INDEX IF NOT EXISTS idx_leads_assigned_to ON leads(assigned_to);
+      CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id);
+      CREATE INDEX IF NOT EXISTS idx_sessions_expires_at ON sessions(expires_at);
       CREATE INDEX IF NOT EXISTS idx_leads_followup_date ON leads(followup_date);
       CREATE INDEX IF NOT EXISTS idx_leads_site_visit_date ON leads(site_visit_date);
       CREATE INDEX IF NOT EXISTS idx_activities_lead_id ON lead_activities(lead_id);
@@ -276,20 +300,64 @@ export async function initDb() {
       CREATE INDEX IF NOT EXISTS idx_whatsapp_media_assets_active ON whatsapp_media_assets(active);
     `);
 
-    await migrateSqlite();
   }
 
+  await migrateSchema();
   await seedDb();
 }
 
-async function migrateSqlite() {
-  const columns = (await all("PRAGMA table_info(leads)")).map((column) => column.name);
+async function migrateSchema() {
+  const columns = await tableColumns("leads");
   if (!columns.includes("looking_for")) {
-    db.exec("ALTER TABLE leads ADD COLUMN looking_for TEXT");
+    await run("ALTER TABLE leads ADD COLUMN looking_for TEXT");
   }
   if (!columns.includes("buy_plan")) {
-    db.exec("ALTER TABLE leads ADD COLUMN buy_plan TEXT");
+    await run("ALTER TABLE leads ADD COLUMN buy_plan TEXT");
   }
+
+  const userColumns = await tableColumns("users");
+  if (!userColumns.includes("password_hash")) {
+    await run("ALTER TABLE users ADD COLUMN password_hash TEXT");
+  }
+  if (!userColumns.includes("password_salt")) {
+    await run("ALTER TABLE users ADD COLUMN password_salt TEXT");
+  }
+
+  if (userColumns.includes("password")) {
+    const legacyUsers = await all(
+      `SELECT id, password
+       FROM users
+       WHERE password IS NOT NULL
+         AND (password_hash IS NULL OR password_hash = '')`
+    );
+    for (const user of legacyUsers) {
+      const credentials = hashPassword(user.password, { enforceLength: false });
+      await run(
+        `UPDATE users
+         SET password_hash = :passwordHash,
+             password_salt = :passwordSalt
+         WHERE id = :id`,
+        { id: user.id, passwordHash: credentials.hash, passwordSalt: credentials.salt }
+      );
+    }
+
+    if (isPostgres) {
+      await db.query("ALTER TABLE users DROP COLUMN IF EXISTS password");
+    } else {
+      db.exec("ALTER TABLE users DROP COLUMN password");
+    }
+  }
+}
+
+async function tableColumns(table) {
+  if (isPostgres) {
+    const result = await db.query(
+      "SELECT column_name AS name FROM information_schema.columns WHERE table_name = $1",
+      [table]
+    );
+    return result.rows.map((column) => column.name);
+  }
+  return (await all(`PRAGMA table_info(${table})`)).map((column) => column.name);
 }
 
 export async function all(sql, params = {}) {
@@ -625,13 +693,23 @@ async function seedDb() {
   const userCount = (await get("SELECT COUNT(*) AS count FROM users")).count;
   if (Number(userCount) > 0) return;
 
+  const adminEmail = process.env.INITIAL_ADMIN_EMAIL;
+  const adminPassword = process.env.INITIAL_ADMIN_PASSWORD;
+  if (!adminEmail || !adminPassword) {
+    throw new Error("INITIAL_ADMIN_EMAIL and INITIAL_ADMIN_PASSWORD are required when creating the first CRM user.");
+  }
+  const credentials = hashPassword(adminPassword);
   await run(
-    "INSERT INTO users (name, email, password, role) VALUES (:name, :email, :password, :role)",
-    { name: "Amit Patidar", email: "amitpatidar.7492@gmail.com", password: "@NanddMahal", role: "admin" }
-  );
-  await run(
-    "INSERT INTO users (name, email, password, role) VALUES (:name, :email, :password, :role)",
-    { name: "K Sengar", email: "Ksengar413@gmail.com", password: "@NanddMahal", role: "sales" }
+    `INSERT INTO users
+      (name, email, password_hash, password_salt, role)
+     VALUES (:name, :email, :passwordHash, :passwordSalt, :role)`,
+    {
+      name: process.env.INITIAL_ADMIN_NAME || "CRM Admin",
+      email: adminEmail.trim().toLowerCase(),
+      passwordHash: credentials.hash,
+      passwordSalt: credentials.salt,
+      role: "admin"
+    }
   );
 }
 

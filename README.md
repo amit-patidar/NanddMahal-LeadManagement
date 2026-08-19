@@ -13,12 +13,18 @@ npm run dev
 
 Open the Vite URL shown in the terminal. The API runs on `http://localhost:4000`.
 
-Users are seeded for local development if the database is empty:
+If the database is empty, create the first administrator through these local `.env` values before starting the server:
 
-- `amitpatidar.7492@gmail.com`
-- `Ksengar413@gmail.com`
+```bash
+INITIAL_ADMIN_NAME=CRM Admin
+INITIAL_ADMIN_EMAIL=admin@example.com
+INITIAL_ADMIN_PASSWORD=<at least 8 characters>
+COOKIE_SECURE=false
+```
 
-Passwords are environment/database data and should not be committed.
+Existing legacy users are migrated to salted password hashes on startup. Passwords are environment/database data and should not be committed.
+
+After login, an administrator can open **Users** to create sales or admin accounts, reset passwords, activate/deactivate users, and assign leads. Sales users only see leads assigned to their account; administrators see all leads.
 
 ## Google Sheets Sync
 
@@ -81,6 +87,10 @@ Environment variables:
 
 ```bash
 DATABASE_URL=<Render Internal Database URL>
+INITIAL_ADMIN_NAME=<first administrator name, only needed for an empty database>
+INITIAL_ADMIN_EMAIL=<first administrator email, only needed for an empty database>
+INITIAL_ADMIN_PASSWORD=<first administrator password, only needed for an empty database>
+COOKIE_SECURE=true
 GOOGLE_SHEET_ID=<sheet id>
 GOOGLE_WORKSHEET_NAME=Nandd Mahal Leads
 GOOGLE_PROJECT_ID=<service account project_id>

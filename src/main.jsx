@@ -13,6 +13,7 @@ import {
   Siren,
   Star,
   UserCheck,
+  UsersRound,
   XCircle
 } from "lucide-react";
 import "./styles.css";
@@ -23,7 +24,8 @@ const rejectionReasons = ["Budget", "Location", "Not Interested", "Purchased Els
 const callOutcomes = ["Attempted", "Connected", "Follow Up", "Site Visit", "Super Interested", "Rejected"];
 
 function App() {
-  const [user, setUser] = useState(() => JSON.parse(localStorage.getItem("crmUser") || "null"));
+  const [user, setUser] = useState(null);
+  const [authChecked, setAuthChecked] = useState(false);
   const [users, setUsers] = useState([]);
   const [page, setPage] = useState("dashboard");
   const [missedTab, setMissedTab] = useState("missed-leads");
@@ -36,15 +38,22 @@ function App() {
   }
 
   useEffect(() => {
-    request("/users").then(setUsers).catch(console.error);
+    request("/auth/me")
+      .then((result) => setUser(result.user))
+      .catch(() => setUser(null))
+      .finally(() => setAuthChecked(true));
   }, []);
 
-  if (!user) {
-    return <Login users={users} onLogin={(nextUser) => {
-      localStorage.setItem("crmUser", JSON.stringify(nextUser));
-      setUser(nextUser);
-    }} />;
-  }
+  useEffect(() => {
+    if (user?.role !== "admin") {
+      setUsers([]);
+      return;
+    }
+    request("/users").then(setUsers).catch(console.error);
+  }, [user]);
+
+  if (!authChecked) return <div className="login-shell"><p className="muted">Loading CRM...</p></div>;
+  if (!user) return <Login onLogin={setUser} />;
 
   return (
     <div className="app">
@@ -65,6 +74,7 @@ function App() {
           <NavButton icon={<Siren />} label="Missed" id="missed" page={page} setPage={(id) => { setMissedTab("missed-leads"); navigate(id); }} />
           <NavButton icon={<XCircle />} label="Rejected Leads" id="rejected" page={page} setPage={navigate} />
           <NavButton icon={<ClipboardList />} label="All Leads" id="all" page={page} setPage={navigate} />
+          {user.role === "admin" && <NavButton icon={<UsersRound />} label="Users" id="users" page={page} setPage={navigate} />}
         </nav>
         <div className="profile">
           <CircleUserRound />
@@ -72,22 +82,24 @@ function App() {
             <strong>{user.name}</strong>
             <small>{user.role}</small>
           </div>
-          <button className="icon-button" title="Logout" onClick={() => {
-            localStorage.removeItem("crmUser");
+          <button className="icon-button" title="Logout" onClick={() => request("/auth/logout", { method: "POST" }).catch(() => {}).finally(() => {
+            setSelectedLeadId(null);
+            setPage("dashboard");
             setUser(null);
-          }}>x</button>
+          })}>x</button>
         </div>
       </aside>
 
       <main className="main">
         <GlobalSearch openLead={setSelectedLeadId} />
         {selectedLeadId ? (
-          <LeadDetail id={selectedLeadId} user={user} onBack={() => setSelectedLeadId(null)} onChanged={() => {}} />
+          <LeadDetail id={selectedLeadId} user={user} users={users} onBack={() => setSelectedLeadId(null)} onChanged={() => {}} />
         ) : (
           <Page
             page={page}
             user={user}
             users={users}
+            onUsersChanged={setUsers}
             openLead={setSelectedLeadId}
             setPage={navigate}
             missedTab={missedTab}
@@ -181,20 +193,16 @@ function GlobalSearch({ openLead }) {
   );
 }
 
-function Login({ users, onLogin }) {
-  const [email, setEmail] = useState("");
+function Login({ onLogin }) {
+  const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
-
-  useEffect(() => {
-    if (!email && users[0]) setEmail(users[0].email);
-  }, [users, email]);
 
   async function submit(e) {
     e.preventDefault();
     setError("");
     try {
-      const result = await request("/auth/login", { method: "POST", body: { email, password } });
+      const result = await request("/auth/login", { method: "POST", body: { identifier, password } });
       onLogin(result.user);
     } catch (err) {
       setError(err.message);
@@ -211,12 +219,10 @@ function Login({ users, onLogin }) {
             <small>Private sales CRM</small>
           </div>
         </div>
-        <label>Email</label>
-        <select value={email} onChange={(e) => setEmail(e.target.value)}>
-          {users.map((u) => <option key={u.id} value={u.email}>{u.name} - {u.email}</option>)}
-        </select>
+        <label>Username or email</label>
+        <input type="email" autoComplete="username" value={identifier} onChange={(e) => setIdentifier(e.target.value)} required />
         <label>Password</label>
-        <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} />
+        <input type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} required />
         {error && <p className="error">{error}</p>}
         <button className="primary" type="submit">Login</button>
       </form>
@@ -224,10 +230,13 @@ function Login({ users, onLogin }) {
   );
 }
 
-function Page({ page, user, users, openLead, setPage, missedTab, setMissedTab, allLeadFilters, setAllLeadFilters }) {
+function Page({ page, user, users, onUsersChanged, openLead, setPage, missedTab, setMissedTab, allLeadFilters, setAllLeadFilters }) {
   if (page === "dashboard") return <Dashboard setPage={setPage} setMissedTab={setMissedTab} />;
   if (page === "missed") return <Missed user={user} openLead={openLead} tab={missedTab} setTab={setMissedTab} />;
   if (page === "all") return <AllLeads user={user} users={users} openLead={openLead} filters={allLeadFilters} setFilters={setAllLeadFilters} />;
+  if (page === "users") return user.role === "admin"
+    ? <UserManagement users={users} onUsersChanged={onUsersChanged} />
+    : <Dashboard setPage={setPage} setMissedTab={setMissedTab} />;
 
   const configs = {
     new: { title: "New Leads", list: "new", quick: ["assignToMe", "callUpdate"] },
@@ -312,6 +321,93 @@ function SyncPanel() {
   );
 }
 
+function UserManagement({ users, onUsersChanged }) {
+  const [members, setMembers] = useState(users);
+  const [form, setForm] = useState({ name: "", email: "", password: "", role: "sales" });
+  const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  async function load() {
+    const result = await request("/users");
+    setMembers(result);
+    onUsersChanged(result);
+  }
+
+  useEffect(() => {
+    load().catch((err) => setError(err.message));
+  }, []);
+
+  async function create(e) {
+    e.preventDefault();
+    setSaving(true);
+    setMessage("");
+    setError("");
+    try {
+      await request("/users", { method: "POST", body: form });
+      setForm({ name: "", email: "", password: "", role: "sales" });
+      setMessage("User created.");
+      await load();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function update(id, body) {
+    setMessage("");
+    setError("");
+    try {
+      await request(`/users/${id}`, { method: "PATCH", body });
+      setMessage("User updated.");
+      await load();
+    } catch (err) {
+      setError(err.message);
+    }
+  }
+
+  function resetPassword(member) {
+    const password = window.prompt(`Set a new password for ${member.name} (minimum 8 characters):`);
+    if (password === null) return;
+    update(member.id, { password });
+  }
+
+  return (
+    <section className="user-management">
+      <Header title="Users" subtitle="Create team accounts and control which users can access assigned leads." />
+      <form className="user-create-form" onSubmit={create}>
+        <label>Name<input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required /></label>
+        <label>Username or email<input type="email" autoComplete="off" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} required /></label>
+        <label>Temporary password<input type="password" autoComplete="new-password" minLength="8" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} required /></label>
+        <label>Role<select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })}><option value="sales">Sales</option><option value="admin">Admin</option></select></label>
+        <button className="primary" type="submit" disabled={saving}>{saving ? "Creating" : "Create User"}</button>
+      </form>
+      {message && <p className="success-text">{message}</p>}
+      {error && <p className="error">{error}</p>}
+      <div className="user-table-wrap">
+        <table className="user-table">
+          <thead><tr><th>Name</th><th>Username / email</th><th>Role</th><th>Status</th><th>Actions</th></tr></thead>
+          <tbody>
+            {members.map((member) => (
+              <tr key={member.id}>
+                <td>{member.name}</td>
+                <td>{member.email}</td>
+                <td>{member.role}</td>
+                <td><span className={`badge ${member.active ? "connected" : "attempted"}`}>{member.active ? "Active" : "Inactive"}</span></td>
+                <td className="user-actions">
+                  <button className="secondary" type="button" onClick={() => resetPassword(member)}>Reset password</button>
+                  <button className={member.active ? "danger" : "secondary"} type="button" onClick={() => update(member.id, { active: !member.active })}>{member.active ? "Deactivate" : "Activate"}</button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+}
+
 function Missed({ user, openLead, tab, setTab }) {
   const config = {
     title: "Missed",
@@ -339,20 +435,20 @@ function AllLeads({ user, users, openLead, filters, setFilters }) {
   return (
     <section>
       <Header title="All Leads" subtitle="Search by lead details or comments, then narrow by status, user, or date." />
-      <div className="tabs">
+      {user.role === "admin" && <div className="tabs">
         <button className={!filters.assignedTo ? "active" : ""} onClick={() => setFilters({ ...filters, assignedTo: "" })}>All Leads</button>
         <button className={String(filters.assignedTo) === String(user.id) ? "active" : ""} onClick={() => setFilters({ ...filters, assignedTo: String(user.id) })}>My Leads</button>
-      </div>
+      </div>}
       <div className="filters">
         <label className="search-box"><Search size={16} /><input placeholder="Search name, phone, or comments" value={filters.search} onChange={(e) => setFilters({ ...filters, search: e.target.value })} /></label>
         <select value={filters.status} onChange={(e) => setFilters({ ...filters, status: e.target.value })}>
           <option value="">All statuses</option>
           {statusOptions.map((s) => <option key={s}>{s}</option>)}
         </select>
-        <select value={filters.assignedTo} onChange={(e) => setFilters({ ...filters, assignedTo: e.target.value })}>
+        {user.role === "admin" && <select value={filters.assignedTo} onChange={(e) => setFilters({ ...filters, assignedTo: e.target.value })}>
           <option value="">All users</option>
-          {users.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
-        </select>
+          {users.filter((u) => u.active).map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
+        </select>}
         <select value={filters.dateField} onChange={(e) => setFilters({ ...filters, dateField: e.target.value })}>
           <option value="created">Created Date</option>
           <option value="followup">Follow-up Date</option>
@@ -421,7 +517,7 @@ function LeadList({ config, user, openLead, embedded = false }) {
   }
 
   async function mutate(id, body) {
-    await request(`/leads/${id}`, { method: "POST", body: { ...body, userId: user.id } });
+    await request(`/leads/${id}`, { method: "POST", body });
     await load();
   }
 
@@ -495,7 +591,7 @@ function LeadList({ config, user, openLead, embedded = false }) {
   );
 }
 
-function LeadDetail({ id, user, onBack }) {
+function LeadDetail({ id, user, users, onBack }) {
   const [data, setData] = useState(null);
   const [whatsappStatus, setWhatsappStatus] = useState(null);
   const [whatsappMessages, setWhatsappMessages] = useState([]);
@@ -519,9 +615,13 @@ function LeadDetail({ id, user, onBack }) {
   }, [id]);
 
   async function mutate(body) {
-    await request(`/leads/${id}`, { method: "POST", body: { ...body, userId: user.id } });
+    await request(`/leads/${id}`, { method: "POST", body });
     setDialog(null);
     await load();
+  }
+
+  async function assignLead(e) {
+    await mutate({ action: "assign", assignedTo: e.target.value || null });
   }
 
   if (!data) return <p className="muted">Loading lead...</p>;
@@ -547,6 +647,12 @@ function LeadDetail({ id, user, onBack }) {
         <Info label="Follow-up" value={lead.followup_date || "-"} />
         <Info label="Site Visit" value={lead.site_visit_date || "-"} />
       </div>
+      {user.role === "admin" && <label className="detail-assignment">Assigned to
+        <select value={lead.assigned_to || ""} onChange={assignLead}>
+          <option value="">Unassigned</option>
+          {users.filter((member) => member.active).map((member) => <option key={member.id} value={member.id}>{member.name}</option>)}
+        </select>
+      </label>}
       <div className="actions detail-actions">
         {["callUpdate", "comment", "Closed"].map((action) => (
           <button key={action} className={buttonClass(action)} onClick={() => {
@@ -681,7 +787,6 @@ function WhatsAppPanel({ lead, user, status, messages, replyWindow, onChanged })
     try {
       const formData = new FormData();
       formData.append("file", file);
-      formData.append("userId", String(user.id));
       const asset = await uploadRequest("/whatsapp/media", formData);
       await loadMedia();
       setSelectedMediaId(String(asset.id));
@@ -701,7 +806,6 @@ function WhatsAppPanel({ lead, user, status, messages, replyWindow, onChanged })
       const result = await request(`/leads/${lead.id}/whatsapp/send`, {
         method: "POST",
         body: {
-          userId: user.id,
           templateName: selectedTemplate.name,
           language: selectedTemplate.language,
           parameters: bodyParameters.map((item) => item.trim()),
@@ -726,7 +830,7 @@ function WhatsAppPanel({ lead, user, status, messages, replyWindow, onChanged })
     try {
       const result = await request(`/leads/${lead.id}/whatsapp/messages`, {
         method: "POST",
-        body: { userId: user.id, text: replyText }
+        body: { text: replyText }
       });
       setMessage(`WhatsApp reply sent${result.providerMessageId ? ` (${result.providerMessageId})` : ""}.`);
       setReplyText("");
@@ -1044,6 +1148,7 @@ async function request(path, options = {}) {
   const response = await fetch(`${API}${path}`, {
     method: options.method || "GET",
     headers: { "content-type": "application/json" },
+    credentials: "same-origin",
     body: options.body ? JSON.stringify(options.body) : undefined
   });
   const data = await response.json();
@@ -1054,6 +1159,7 @@ async function request(path, options = {}) {
 async function uploadRequest(path, formData) {
   const response = await fetch(`${API}${path}`, {
     method: "POST",
+    credentials: "same-origin",
     body: formData
   });
   const data = await response.json();

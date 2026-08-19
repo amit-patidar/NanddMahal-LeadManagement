@@ -22,6 +22,7 @@ Current stack:
 - Google Sheets import in `server/sheetsSync.js`.
 - Meta WhatsApp Cloud API modules in `server/whatsapp*.js`.
 - Cloudinary media storage in `server/cloudinaryMedia.js`.
+- Authentication uses salted `crypto.scrypt` password hashes, a server-side `sessions` table, and an HTTP-only session cookie. Admins manage users; sales users are server-scoped to assigned leads.
 
 The active development branch is `feature/whatsapp-automation`. The GitHub repository and deployment instructions are in `README.md`; secret values belong only in local or Render environment variables.
 
@@ -52,6 +53,7 @@ The active development branch is `feature/whatsapp-automation`. The GitHub repos
 - Global lead search covers name, phone, email, Meta lead ID, and current or historical CRM comments.
 - WhatsApp supports approved template sends, image headers, Cloudinary media reuse, inbound webhooks, delivery/failure logs, and direct replies only within the 24-hour customer-service window.
 - Fully automatic outbound messaging remains disabled until consent, opt-out, template approval, and retry policy are finalized.
+- User access rules: admins can view and assign all leads; sales users can only view or update leads assigned to their authenticated account. Never reintroduce client-trusted user IDs for authorization.
 
 ## Fact ownership
 
