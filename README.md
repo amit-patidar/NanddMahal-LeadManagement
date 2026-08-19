@@ -2,7 +2,7 @@
 
 Simple private CRM for a two-person real-estate sales team. It keeps Meta leads, follow-ups, site visits, comments, and activity history in one web app.
 
-See `DEVELOPMENT_NOTES.md` before making feature changes. It documents the current architecture, deployment, data rules, and known decisions.
+Before making feature changes, read `AGENTS.md`, then `CLAUDE.md`, `TASKS.md`, and `SYSTEMS.md`. `README.md` contains user-facing setup and deployment instructions.
 
 ## Run Locally
 
