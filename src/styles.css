@@ -183,6 +183,14 @@ nav button:hover {
   color: #667085;
 }
 
+.global-search-results .search-match {
+  max-width: 520px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #7a5b00;
+}
+
 .global-search-results p {
   margin: 0;
   padding: 10px;

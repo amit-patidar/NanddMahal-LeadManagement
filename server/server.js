@@ -38,7 +38,7 @@ const distDir = path.join(__dirname, "..", "dist");
 
 await initDb();
 
-const server = http.createServer(async (req, res) => {
+export const server = http.createServer(async (req, res) => {
   try {
     const url = new URL(req.url, `http://${req.headers.host}`);
     if (req.method === "OPTIONS") {
@@ -253,6 +253,13 @@ async function listLeads(query) {
       OR l.phone LIKE :search
       OR LOWER(COALESCE(l.email, '')) LIKE :search
       OR LOWER(l.meta_lead_id) LIKE :search
+      OR LOWER(COALESCE(l.last_comment, '')) LIKE :search
+      OR EXISTS (
+        SELECT 1
+        FROM lead_activities search_activity
+        WHERE search_activity.lead_id = l.id
+          AND LOWER(COALESCE(search_activity.comment, '')) LIKE :search
+      )
     )`);
     params.search = `%${query.search.toLowerCase()}%`;
   }
@@ -261,8 +268,22 @@ async function listLeads(query) {
   applyDatePreset(query, clauses, params);
 
   const where = clauses.length ? `WHERE ${clauses.join(" AND ")}` : "";
+  const matchedComment = query.search
+    ? `,
+       CASE
+         WHEN LOWER(COALESCE(l.last_comment, '')) LIKE :search THEN l.last_comment
+         ELSE (
+           SELECT search_activity.comment
+           FROM lead_activities search_activity
+           WHERE search_activity.lead_id = l.id
+             AND LOWER(COALESCE(search_activity.comment, '')) LIKE :search
+           ORDER BY search_activity.created_at DESC, search_activity.id DESC
+           LIMIT 1
+         )
+       END AS matched_comment`
+    : "";
   return all(
-    `SELECT l.*, u.name AS assigned_name
+    `SELECT l.*, u.name AS assigned_name${matchedComment}
      FROM leads l
      LEFT JOIN users u ON u.id = l.assigned_to
      ${where}

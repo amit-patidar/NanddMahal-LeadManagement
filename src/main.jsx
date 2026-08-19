@@ -156,7 +156,7 @@ function GlobalSearch({ openLead }) {
           value={term}
           onChange={(e) => setTerm(e.target.value)}
           onFocus={() => term.trim().length >= 2 && setOpen(true)}
-          placeholder="Search name, phone, email, or lead ID"
+          placeholder="Search name, phone, email, lead ID, or comments"
         />
       </label>
       {open && (
@@ -168,6 +168,7 @@ function GlobalSearch({ openLead }) {
               <span>
                 <strong>{lead.name}</strong>
                 <small>{lead.phone} {lead.email ? `- ${lead.email}` : ""}</small>
+                {lead.matched_comment && <small className="search-match">Comment: {lead.matched_comment}</small>}
               </span>
               <StatusBadge status={lead.status} />
             </button>
@@ -337,13 +338,13 @@ function AllLeads({ user, users, openLead, filters, setFilters }) {
 
   return (
     <section>
-      <Header title="All Leads" subtitle="Search by name or phone, then narrow by status, user, or date." />
+      <Header title="All Leads" subtitle="Search by lead details or comments, then narrow by status, user, or date." />
       <div className="tabs">
         <button className={!filters.assignedTo ? "active" : ""} onClick={() => setFilters({ ...filters, assignedTo: "" })}>All Leads</button>
         <button className={String(filters.assignedTo) === String(user.id) ? "active" : ""} onClick={() => setFilters({ ...filters, assignedTo: String(user.id) })}>My Leads</button>
       </div>
       <div className="filters">
-        <label className="search-box"><Search size={16} /><input placeholder="Search name or phone" value={filters.search} onChange={(e) => setFilters({ ...filters, search: e.target.value })} /></label>
+        <label className="search-box"><Search size={16} /><input placeholder="Search name, phone, or comments" value={filters.search} onChange={(e) => setFilters({ ...filters, search: e.target.value })} /></label>
         <select value={filters.status} onChange={(e) => setFilters({ ...filters, status: e.target.value })}>
           <option value="">All statuses</option>
           {statusOptions.map((s) => <option key={s}>{s}</option>)}
