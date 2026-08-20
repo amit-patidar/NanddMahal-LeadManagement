@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import {
   CalendarClock,
@@ -14,6 +14,7 @@ import {
   Star,
   UserCheck,
   UsersRound,
+  X,
   XCircle
 } from "lucide-react";
 import "./styles.css";
@@ -35,10 +36,21 @@ function App() {
   const [missedTab, setMissedTab] = useState("missed-leads");
   const [allLeadFilters, setAllLeadFilters] = useState({ search: "", status: "", assignedTo: "", preset: "", dateField: "created" });
   const [selectedLeadId, setSelectedLeadId] = useState(null);
+  const [whatsappLeadId, setWhatsappLeadId] = useState(null);
 
   function navigate(nextPage) {
     setSelectedLeadId(null);
+    setWhatsappLeadId(null);
     setPage(nextPage);
+  }
+
+  function openLead(id) {
+    setWhatsappLeadId(null);
+    setSelectedLeadId(id);
+  }
+
+  function openWhatsApp(id) {
+    setWhatsappLeadId(id);
   }
 
   useEffect(() => {
@@ -88,6 +100,7 @@ function App() {
           </div>
           <button className="icon-button" title="Logout" onClick={() => request("/auth/logout", { method: "POST" }).catch(() => {}).finally(() => {
             setSelectedLeadId(null);
+            setWhatsappLeadId(null);
             setPage("dashboard");
             setUser(null);
           })}>x</button>
@@ -95,16 +108,20 @@ function App() {
       </aside>
 
       <main className="main">
-        <GlobalSearch openLead={setSelectedLeadId} />
+        <GlobalSearch openLead={openLead} />
         {selectedLeadId ? (
-          <LeadDetail id={selectedLeadId} user={user} users={users} onBack={() => setSelectedLeadId(null)} onChanged={() => {}} />
+          <LeadDetail id={selectedLeadId} user={user} users={users} openWhatsApp={openWhatsApp} onBack={() => {
+            setWhatsappLeadId(null);
+            setSelectedLeadId(null);
+          }} />
         ) : (
           <Page
             page={page}
             user={user}
             users={users}
             onUsersChanged={setUsers}
-            openLead={setSelectedLeadId}
+            openLead={openLead}
+            openWhatsApp={openWhatsApp}
             setPage={navigate}
             missedTab={missedTab}
             setMissedTab={setMissedTab}
@@ -113,6 +130,7 @@ function App() {
           />
         )}
       </main>
+      {whatsappLeadId && <WhatsAppDrawer key={whatsappLeadId} id={whatsappLeadId} user={user} onClose={() => setWhatsappLeadId(null)} />}
     </div>
   );
 }
@@ -234,10 +252,10 @@ function Login({ onLogin }) {
   );
 }
 
-function Page({ page, user, users, onUsersChanged, openLead, setPage, missedTab, setMissedTab, allLeadFilters, setAllLeadFilters }) {
+function Page({ page, user, users, onUsersChanged, openLead, openWhatsApp, setPage, missedTab, setMissedTab, allLeadFilters, setAllLeadFilters }) {
   if (page === "dashboard") return <Dashboard setPage={setPage} setMissedTab={setMissedTab} />;
-  if (page === "missed") return <Missed user={user} users={users} openLead={openLead} tab={missedTab} setTab={setMissedTab} />;
-  if (page === "all") return <AllLeads user={user} users={users} openLead={openLead} filters={allLeadFilters} setFilters={setAllLeadFilters} />;
+  if (page === "missed") return <Missed user={user} users={users} openLead={openLead} openWhatsApp={openWhatsApp} tab={missedTab} setTab={setMissedTab} />;
+  if (page === "all") return <AllLeads user={user} users={users} openLead={openLead} openWhatsApp={openWhatsApp} filters={allLeadFilters} setFilters={setAllLeadFilters} />;
   if (page === "users") return user.role === "admin"
     ? <UserManagement users={users} onUsersChanged={onUsersChanged} />
     : <Dashboard setPage={setPage} setMissedTab={setMissedTab} />;
@@ -255,7 +273,7 @@ function Page({ page, user, users, onUsersChanged, openLead, setPage, missedTab,
       extraColumns: ["rejectionReason"]
     }
   };
-  return <LeadList config={configs[page]} user={user} users={users} openLead={openLead} />;
+  return <LeadList config={configs[page]} user={user} users={users} openLead={openLead} openWhatsApp={openWhatsApp} />;
 }
 
 function Dashboard({ setPage, setMissedTab }) {
@@ -412,7 +430,7 @@ function UserManagement({ users, onUsersChanged }) {
   );
 }
 
-function Missed({ user, users, openLead, tab, setTab }) {
+function Missed({ user, users, openLead, openWhatsApp, tab, setTab }) {
   const config = {
     title: "Missed",
     list: tab,
@@ -427,12 +445,12 @@ function Missed({ user, users, openLead, tab, setTab }) {
         <button className={tab === "missed-followups" ? "active" : ""} onClick={() => setTab("missed-followups")}>Missed Follow-ups</button>
         <button className={tab === "missed-sitevisits" ? "active" : ""} onClick={() => setTab("missed-sitevisits")}>Missed Site Visits</button>
       </div>
-      <LeadList config={config} user={user} users={users} openLead={openLead} embedded />
+      <LeadList config={config} user={user} users={users} openLead={openLead} openWhatsApp={openWhatsApp} embedded />
     </section>
   );
 }
 
-function AllLeads({ user, users, openLead, filters, setFilters }) {
+function AllLeads({ user, users, openLead, openWhatsApp, filters, setFilters }) {
   const params = new URLSearchParams(Object.entries(filters).filter(([, v]) => v));
   const config = { title: "All Leads", list: "", endpoint: `/leads?${params}`, quick: ["callUpdate", "comment"] };
 
@@ -466,7 +484,7 @@ function AllLeads({ user, users, openLead, filters, setFilters }) {
           <option value="month">This Month</option>
         </select>
       </div>
-      <LeadList config={config} user={user} users={users} openLead={openLead} embedded />
+      <LeadList config={config} user={user} users={users} openLead={openLead} openWhatsApp={openWhatsApp} embedded />
     </section>
   );
 }
@@ -486,7 +504,7 @@ const EXTRA_LEAD_COLUMNS = {
   rejectionReason: { key: "rejectionReason", label: "Rejection Reason", width: "180px", className: "lead-col-rejection" }
 };
 
-function LeadList({ config, user, users, openLead, embedded = false }) {
+function LeadList({ config, user, users, openLead, openWhatsApp, embedded = false }) {
   const [leads, setLeads] = useState([]);
   const [loading, setLoading] = useState(true);
   const [dateFilter, setDateFilter] = useState("today");
@@ -594,6 +612,15 @@ function LeadList({ config, user, users, openLead, embedded = false }) {
                         {label(action)}
                       </button>
                     ))}
+                    <button
+                      type="button"
+                      className="icon-button row-whatsapp-button"
+                      title={`Open WhatsApp for ${lead.name}`}
+                      aria-label={`Open WhatsApp for ${lead.name}`}
+                      onClick={() => openWhatsApp(lead.id)}
+                    >
+                      <MessageSquareText size={16} />
+                    </button>
                     <button className="secondary" onClick={() => openLead(lead.id)}>Open</button>
                   </div>
                 </td>
@@ -609,23 +636,13 @@ function LeadList({ config, user, users, openLead, embedded = false }) {
   );
 }
 
-function LeadDetail({ id, user, users, onBack }) {
+function LeadDetail({ id, user, users, openWhatsApp, onBack }) {
   const [data, setData] = useState(null);
-  const [whatsappStatus, setWhatsappStatus] = useState(null);
-  const [whatsappMessages, setWhatsappMessages] = useState([]);
-  const [whatsappReplyWindow, setWhatsappReplyWindow] = useState(null);
   const [dialog, setDialog] = useState(null);
 
   async function load() {
-    const [leadData, status, messages] = await Promise.all([
-      request(`/leads/${id}`),
-      request("/whatsapp/status").catch(() => null),
-      request(`/leads/${id}/whatsapp/messages`).catch(() => ({ messages: [], replyWindow: null }))
-    ]);
+    const leadData = await request(`/leads/${id}`);
     setData(leadData);
-    setWhatsappStatus(status);
-    setWhatsappMessages(messages.messages || []);
-    setWhatsappReplyWindow(messages.replyWindow || null);
   }
 
   useEffect(() => {
@@ -678,8 +695,16 @@ function LeadDetail({ id, user, users, onBack }) {
             else mutate({ action: "status", status: action });
           }}>{label(action)}</button>
         ))}
+        <button
+          type="button"
+          className="secondary whatsapp-trigger"
+          title="Open WhatsApp"
+          aria-label={`Open WhatsApp for ${lead.name}`}
+          onClick={() => openWhatsApp(lead.id)}
+        >
+          <MessageSquareText size={16} /> WhatsApp
+        </button>
       </div>
-      <WhatsAppPanel lead={lead} user={user} status={whatsappStatus} messages={whatsappMessages} replyWindow={whatsappReplyWindow} onChanged={load} />
       <h2>Activity Timeline</h2>
       <div className="timeline">
         {activities.map((a) => (
@@ -695,7 +720,75 @@ function LeadDetail({ id, user, users, onBack }) {
   );
 }
 
-function WhatsAppPanel({ lead, user, status, messages, replyWindow, onChanged }) {
+function WhatsAppDrawer({ id, user, onClose }) {
+  const [data, setData] = useState(null);
+  const [error, setError] = useState("");
+  const [loadAttempt, setLoadAttempt] = useState(0);
+  const closeButtonRef = useRef(null);
+
+  useEffect(() => {
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const onKeyDown = (event) => {
+      if (event.key === "Escape") onClose();
+    };
+    document.addEventListener("keydown", onKeyDown);
+    closeButtonRef.current?.focus();
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [id, onClose]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setData(null);
+    setError("");
+    Promise.all([
+      request(`/leads/${id}`),
+      request("/whatsapp/status").catch(() => null),
+      request(`/leads/${id}/whatsapp/messages`)
+    ]).then(([leadData, status, messages]) => {
+      if (cancelled) return;
+      setData({ lead: leadData.lead, status, messages: messages.messages || [], replyWindow: messages.replyWindow || null });
+    }).catch((err) => {
+      if (!cancelled) setError(err.message);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [id, loadAttempt]);
+
+  return (
+    <div className="whatsapp-drawer-backdrop">
+      <aside className="whatsapp-drawer" role="dialog" aria-modal="true" aria-labelledby="whatsapp-drawer-title">
+        <header className="whatsapp-drawer-header">
+          <div>
+            <div className="whatsapp-drawer-title">
+              <MessageSquareText size={20} />
+              <h2 id="whatsapp-drawer-title">WhatsApp</h2>
+            </div>
+            {data?.lead && <p className="whatsapp-drawer-lead"><strong>{data.lead.name}</strong><span>{data.lead.phone}</span></p>}
+            {data?.status && <p className="muted drawer-status-line"><span className={`badge ${data.status.sendConfigured ? "connected" : "attempted"}`}>{data.status.sendConfigured ? "Send Ready" : "Setup Needed"}</span> Callback URL: <code>{data.status.callbackUrlPath || "/api/webhooks/whatsapp/meta"}</code></p>}
+          </div>
+          <button ref={closeButtonRef} type="button" className="icon-button" title="Close WhatsApp" aria-label="Close WhatsApp" onClick={onClose}><X size={18} /></button>
+        </header>
+        {error ? (
+          <div className="drawer-state">
+            <p className="error">Unable to load WhatsApp for this lead: {error}</p>
+            <button type="button" className="secondary" onClick={() => setLoadAttempt((attempt) => attempt + 1)}>Retry</button>
+          </div>
+        ) : !data ? (
+          <p className="muted drawer-state">Loading WhatsApp...</p>
+        ) : (
+          <WhatsAppPanel lead={data.lead} user={user} status={data.status} messages={data.messages} replyWindow={data.replyWindow} compact />
+        )}
+      </aside>
+    </div>
+  );
+}
+
+function WhatsAppPanel({ lead, user, status, messages, replyWindow, compact = false }) {
   const [localMessages, setLocalMessages] = useState(messages);
   const [localReplyWindow, setLocalReplyWindow] = useState(replyWindow);
   const [templates, setTemplates] = useState([]);
@@ -864,7 +957,7 @@ function WhatsAppPanel({ lead, user, status, messages, replyWindow, onChanged })
 
   return (
     <section className="whatsapp-panel">
-      <div className="panel-heading">
+      {!compact && <div className="panel-heading">
         <div>
           <h2><MessageSquareText size={20} /> WhatsApp</h2>
           <p className="muted">Callback URL path: <code>{status?.callbackUrlPath || "/api/webhooks/whatsapp/meta"}</code></p>
@@ -872,7 +965,7 @@ function WhatsAppPanel({ lead, user, status, messages, replyWindow, onChanged })
         <span className={`badge ${status?.sendConfigured ? "connected" : "attempted"}`}>
           {status?.sendConfigured ? "Send Ready" : "Setup Needed"}
         </span>
-      </div>
+      </div>}
       <form className="whatsapp-send" onSubmit={send}>
         <label>
           Template

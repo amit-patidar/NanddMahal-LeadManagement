@@ -8,7 +8,7 @@ Lanes are `Now`, `Waiting`, and `Upcoming`. Completed rows remain marked `Done` 
 
 | ID | Lane | Task | Detail |
 | --- | --- | --- | --- |
-| - | - | No active task | - |
+| T-008 | Now | Implement same-window WhatsApp drawer; automated checks passed, manual UI QA pending | [history](audit/task-history/T-008.md) |
 
 ## Waiting
 
