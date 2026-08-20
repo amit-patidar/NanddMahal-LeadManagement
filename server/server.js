@@ -129,7 +129,7 @@ export const server = http.createServer(async (req, res) => {
     }
 
     if (req.method === "GET" && url.pathname === "/api/users") {
-      requireAdmin(user);
+      requireLeadManager(user);
       return json(res, 200, await all("SELECT id, name, email, role, active FROM users ORDER BY id"));
     }
 
@@ -215,7 +215,8 @@ export const server = http.createServer(async (req, res) => {
     if (req.method === "POST" && leadMatch) {
       const id = Number(leadMatch[1]);
       const body = await readJson(req);
-      assertLeadAccess(await leadById(id), user);
+      const lead = await leadById(id);
+      assertLeadAccess(lead, user);
       return json(res, 200, await updateLead(id, body, user));
     }
 
@@ -244,7 +245,7 @@ async function createUser(body) {
   if (!name || !email || !password) throw new HttpError(400, "Name, username/email, and password are required.");
   if (password.length < 8) throw new HttpError(400, "Password must be at least 8 characters.");
   if (!email.includes("@")) throw new HttpError(400, "Username must be a valid email address.");
-  if (!["admin", "sales"].includes(role)) throw new HttpError(400, "Invalid user role.");
+  if (!["admin", "manager", "sales"].includes(role)) throw new HttpError(400, "Invalid user role.");
 
   const existing = await get("SELECT id FROM users WHERE LOWER(email) = :email", { email });
   if (existing) throw new HttpError(409, "A user with this username/email already exists.");
@@ -304,8 +305,8 @@ async function dashboardCounts(user) {
     today,
     cutoff: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
   };
-  const scope = user.role === "admin" ? "" : " AND assigned_to = :accessUserId";
-  if (user.role !== "admin") params.accessUserId = user.id;
+  const scope = canManageLeads(user) ? "" : " AND assigned_to = :accessUserId";
+  if (!canManageLeads(user)) params.accessUserId = user.id;
   return {
     newLeads: await scalar(`SELECT COUNT(*) FROM leads WHERE status = 'New'${scope}`, params),
     attemptedLeads: await scalar(`SELECT COUNT(*) FROM leads WHERE status = 'Attempted'${scope}`, params),
@@ -342,7 +343,7 @@ async function listLeads(query, user) {
     cutoff: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
   };
 
-  if (user.role !== "admin") {
+  if (!canManageLeads(user)) {
     clauses.push("l.assigned_to = :accessUserId");
     params.accessUserId = user.id;
   } else if (query.view === "my" && query.userId) {
@@ -353,7 +354,7 @@ async function listLeads(query, user) {
     clauses.push("l.status = :status");
     params.status = query.status;
   }
-  if (user.role === "admin" && query.assignedTo) {
+  if (canManageLeads(user) && query.assignedTo) {
     clauses.push("l.assigned_to = :assignedTo");
     params.assignedTo = Number(query.assignedTo);
   }
@@ -467,13 +468,14 @@ async function updateLead(id, body, user) {
   if (!lead) throw new Error("Lead not found");
 
   if (body.action === "assignToMe") {
+    requireLeadManager(user);
     await run("UPDATE leads SET assigned_to = :userId WHERE id = :id", { id, userId: user.id });
     await addActivity({ leadId: id, userId: user.id, activityType: "Assigned", oldValue: lead.assigned_name, newValue: user.name, comment: "Assigned to me" });
     return leadById(id);
   }
 
   if (body.action === "assign") {
-    requireAdmin(user);
+    requireLeadManager(user);
     const assignedTo = body.assignedTo ? Number(body.assignedTo) : null;
     const assignee = assignedTo ? await get("SELECT id, name FROM users WHERE id = :id AND active", { id: assignedTo }) : null;
     if (assignedTo && !assignee) throw new HttpError(400, "Assigned user is not active or does not exist.");
@@ -484,7 +486,7 @@ async function updateLead(id, body, user) {
       activityType: "Assigned",
       oldValue: lead.assigned_name || "Unassigned",
       newValue: assignee?.name || "Unassigned",
-      comment: "Assignment updated by admin"
+      comment: "Assignment updated by lead manager"
     });
     return leadById(id);
   }
@@ -503,7 +505,7 @@ async function updateLead(id, body, user) {
   if (body.action === "status") {
     if (!STATUSES.includes(body.status)) throw new Error("Invalid status");
     let assignedTo = lead.assigned_to;
-    if (user.role === "admin" && Object.hasOwn(body, "assignedTo")) {
+    if (canManageLeads(user) && Object.hasOwn(body, "assignedTo")) {
       assignedTo = body.assignedTo ? Number(body.assignedTo) : null;
       const assignee = assignedTo ? await get("SELECT id FROM users WHERE id = :id AND active", { id: assignedTo }) : null;
       if (assignedTo && !assignee) throw new HttpError(400, "Assigned user is not active or does not exist.");
@@ -572,9 +574,17 @@ function requireAdmin(user) {
   if (user.role !== "admin") throw new HttpError(403, "Administrator access required.");
 }
 
+function requireLeadManager(user) {
+  if (!canManageLeads(user)) throw new HttpError(403, "Administrator or manager access required.");
+}
+
+function canManageLeads(user) {
+  return user.role === "admin" || user.role === "manager";
+}
+
 function assertLeadAccess(lead, user) {
   if (!lead) throw new HttpError(404, "Lead not found");
-  if (user.role !== "admin" && Number(lead.assigned_to) !== Number(user.id)) {
+  if (!canManageLeads(user) && Number(lead.assigned_to) !== Number(user.id)) {
     throw new HttpError(403, "You can only access leads assigned to you.");
   }
 }

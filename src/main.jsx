@@ -23,6 +23,10 @@ const statusOptions = ["New", "Attempted", "Connected", "Follow Up", "Site Visit
 const rejectionReasons = ["Budget", "Location", "Not Interested", "Purchased Elsewhere", "Invalid Lead", "Other"];
 const callOutcomes = ["Attempted", "Connected", "Follow Up", "Site Visit", "Super Interested", "Rejected"];
 
+function canManageLeads(user) {
+  return user?.role === "admin" || user?.role === "manager";
+}
+
 function App() {
   const [user, setUser] = useState(null);
   const [authChecked, setAuthChecked] = useState(false);
@@ -45,7 +49,7 @@ function App() {
   }, []);
 
   useEffect(() => {
-    if (user?.role !== "admin") {
+    if (!canManageLeads(user)) {
       setUsers([]);
       return;
     }
@@ -232,22 +236,22 @@ function Login({ onLogin }) {
 
 function Page({ page, user, users, onUsersChanged, openLead, setPage, missedTab, setMissedTab, allLeadFilters, setAllLeadFilters }) {
   if (page === "dashboard") return <Dashboard setPage={setPage} setMissedTab={setMissedTab} />;
-  if (page === "missed") return <Missed user={user} openLead={openLead} tab={missedTab} setTab={setMissedTab} />;
+  if (page === "missed") return <Missed user={user} users={users} openLead={openLead} tab={missedTab} setTab={setMissedTab} />;
   if (page === "all") return <AllLeads user={user} users={users} openLead={openLead} filters={allLeadFilters} setFilters={setAllLeadFilters} />;
   if (page === "users") return user.role === "admin"
     ? <UserManagement users={users} onUsersChanged={onUsersChanged} />
     : <Dashboard setPage={setPage} setMissedTab={setMissedTab} />;
 
   const configs = {
-    new: { title: "New Leads", list: "new", quick: ["assignToMe", "callUpdate"] },
-    followups: { title: "Follow-ups", list: "followups", dateFilters: true, quick: ["callUpdate", "comment"] },
-    sitevisits: { title: "Site Visits", list: "sitevisits", dateFilters: true, quick: ["siteVisited", "callUpdate", "comment"] },
-    super: { title: "Super Interested", list: "super", quick: ["callUpdate", "Closed", "comment"] },
+    new: { title: "New Leads", list: "new", quick: ["assignLead", "callUpdate"] },
+    followups: { title: "Follow-ups", list: "followups", dateFilters: true, quick: ["assignLead", "callUpdate", "comment"] },
+    sitevisits: { title: "Site Visits", list: "sitevisits", dateFilters: true, quick: ["assignLead", "siteVisited", "callUpdate", "comment"] },
+    super: { title: "Super Interested", list: "super", quick: ["assignLead", "callUpdate", "Closed", "comment"] },
     rejected: {
       title: "Rejected Leads",
       subtitle: "Review rejected leads, reasons, and historical notes.",
       list: "rejected",
-      quick: ["comment"],
+      quick: ["assignLead", "comment"],
       extraColumns: ["rejectionReason"]
     }
   };
@@ -380,7 +384,7 @@ function UserManagement({ users, onUsersChanged }) {
         <label>Name<input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required /></label>
         <label>Username or email<input type="email" autoComplete="off" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} required /></label>
         <label>Temporary password<input type="password" autoComplete="new-password" minLength="8" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} required /></label>
-        <label>Role<select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })}><option value="sales">Sales</option><option value="admin">Admin</option></select></label>
+        <label>Role<select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })}><option value="sales">Sales</option><option value="manager">Manager</option><option value="admin">Admin</option></select></label>
         <button className="primary" type="submit" disabled={saving}>{saving ? "Creating" : "Create User"}</button>
       </form>
       {message && <p className="success-text">{message}</p>}
@@ -408,11 +412,11 @@ function UserManagement({ users, onUsersChanged }) {
   );
 }
 
-function Missed({ user, openLead, tab, setTab }) {
+function Missed({ user, users, openLead, tab, setTab }) {
   const config = {
     title: "Missed",
     list: tab,
-    quick: tab === "missed-leads" ? ["assignToMe", "callUpdate"] : ["callUpdate", "comment"]
+    quick: tab === "missed-leads" ? ["assignLead", "callUpdate"] : ["assignLead", "callUpdate", "comment"]
   };
 
   return (
@@ -423,7 +427,7 @@ function Missed({ user, openLead, tab, setTab }) {
         <button className={tab === "missed-followups" ? "active" : ""} onClick={() => setTab("missed-followups")}>Missed Follow-ups</button>
         <button className={tab === "missed-sitevisits" ? "active" : ""} onClick={() => setTab("missed-sitevisits")}>Missed Site Visits</button>
       </div>
-      <LeadList config={config} user={user} openLead={openLead} embedded />
+      <LeadList config={config} user={user} users={users} openLead={openLead} embedded />
     </section>
   );
 }
@@ -435,7 +439,7 @@ function AllLeads({ user, users, openLead, filters, setFilters }) {
   return (
     <section>
       <Header title="All Leads" subtitle="Search by lead details or comments, then narrow by status, user, or date." />
-      {user.role === "admin" && <div className="tabs">
+      {canManageLeads(user) && <div className="tabs">
         <button className={!filters.assignedTo ? "active" : ""} onClick={() => setFilters({ ...filters, assignedTo: "" })}>All Leads</button>
         <button className={String(filters.assignedTo) === String(user.id) ? "active" : ""} onClick={() => setFilters({ ...filters, assignedTo: String(user.id) })}>My Leads</button>
       </div>}
@@ -445,7 +449,7 @@ function AllLeads({ user, users, openLead, filters, setFilters }) {
           <option value="">All statuses</option>
           {statusOptions.map((s) => <option key={s}>{s}</option>)}
         </select>
-        {user.role === "admin" && <select value={filters.assignedTo} onChange={(e) => setFilters({ ...filters, assignedTo: e.target.value })}>
+        {canManageLeads(user) && <select value={filters.assignedTo} onChange={(e) => setFilters({ ...filters, assignedTo: e.target.value })}>
           <option value="">All users</option>
           {users.filter((u) => u.active).map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
         </select>}
@@ -462,7 +466,7 @@ function AllLeads({ user, users, openLead, filters, setFilters }) {
           <option value="month">This Month</option>
         </select>
       </div>
-      <LeadList config={config} user={user} openLead={openLead} embedded />
+      <LeadList config={config} user={user} users={users} openLead={openLead} embedded />
     </section>
   );
 }
@@ -482,11 +486,12 @@ const EXTRA_LEAD_COLUMNS = {
   rejectionReason: { key: "rejectionReason", label: "Rejection Reason", width: "180px", className: "lead-col-rejection" }
 };
 
-function LeadList({ config, user, openLead, embedded = false }) {
+function LeadList({ config, user, users, openLead, embedded = false }) {
   const [leads, setLeads] = useState([]);
   const [loading, setLoading] = useState(true);
   const [dateFilter, setDateFilter] = useState("today");
   const [dialog, setDialog] = useState(null);
+  const [assignmentLead, setAssignmentLead] = useState(null);
 
   const endpoint = useMemo(() => {
     if (config.endpoint) return config.endpoint;
@@ -510,7 +515,7 @@ function LeadList({ config, user, openLead, embedded = false }) {
   }, [endpoint]);
 
   async function quick(lead, action) {
-    if (action === "assignToMe") return mutate(lead.id, { action: "assignToMe" });
+    if (action === "assignLead") return setAssignmentLead(lead);
     if (action === "siteVisited") return mutate(lead.id, { action: "siteVisited" });
     if (["Follow Up", "Site Visit", "Rejected", "comment", "callUpdate"].includes(action)) return setDialog({ lead, action });
     return mutate(lead.id, { action: "status", status: action });
@@ -565,14 +570,26 @@ function LeadList({ config, user, openLead, embedded = false }) {
                 <td className="lead-col-status"><StatusBadge status={lead.status} /></td>
                 <td className="lead-col-requirement">{lead.looking_for || "-"}</td>
                 <td className="lead-col-plan">{lead.buy_plan || "-"}</td>
-                <td className="lead-col-assigned">{lead.assigned_name || "Unassigned"}</td>
+                <td className="lead-col-assigned">
+                  {canManageLeads(user) ? (
+                    <select
+                      className="inline-assignment"
+                      value={lead.assigned_to || ""}
+                      onChange={(e) => mutate(lead.id, { action: "assign", assignedTo: e.target.value || null })}
+                      aria-label={`Assign ${lead.name}`}
+                    >
+                      <option value="">Unassigned</option>
+                      {users.filter((member) => member.active).map((member) => <option key={member.id} value={member.id}>{member.name}</option>)}
+                    </select>
+                  ) : lead.assigned_name || "Unassigned"}
+                </td>
                 <td className="comment-cell"><span className="comment-text">{lead.last_comment || "-"}</span></td>
                 {config.extraColumns?.includes("rejectionReason") && (
                   <td className="lead-col-rejection">{lead.rejection_reason || "-"}</td>
                 )}
                 <td className="lead-col-actions">
                   <div className="row-actions">
-                    {(config.quick || []).map((action) => (
+                    {(config.quick || []).filter((action) => canManageLeads(user) || action !== "assignLead").map((action) => (
                       <button key={action} className={buttonClass(action)} onClick={() => quick(lead, action)}>
                         {label(action)}
                       </button>
@@ -587,6 +604,7 @@ function LeadList({ config, user, openLead, embedded = false }) {
         </table>
       </div>
       {dialog && <ActionDialog dialog={dialog} onClose={() => setDialog(null)} onSubmit={(body) => mutate(dialog.lead.id, body).then(() => setDialog(null))} />}
+      {assignmentLead && <AssignmentDialog lead={assignmentLead} users={users} onClose={() => setAssignmentLead(null)} onSubmit={(body) => mutate(assignmentLead.id, body).then(() => setAssignmentLead(null))} />}
     </section>
   );
 }
@@ -647,7 +665,7 @@ function LeadDetail({ id, user, users, onBack }) {
         <Info label="Follow-up" value={lead.followup_date || "-"} />
         <Info label="Site Visit" value={lead.site_visit_date || "-"} />
       </div>
-      {user.role === "admin" && <label className="detail-assignment">Assigned to
+      {canManageLeads(user) && <label className="detail-assignment">Assigned to
         <select value={lead.assigned_to || ""} onChange={assignLead}>
           <option value="">Unassigned</option>
           {users.filter((member) => member.active).map((member) => <option key={member.id} value={member.id}>{member.name}</option>)}
@@ -698,12 +716,13 @@ function WhatsAppPanel({ lead, user, status, messages, replyWindow, onChanged })
   const [refreshError, setRefreshError] = useState("");
   const [lastRefreshedAt, setLastRefreshedAt] = useState("");
   const [message, setMessage] = useState("");
+  const canManageLead = canManageLeads(user) || Number(lead.assigned_to) === Number(user.id);
   const selectedTemplate = templates.find((template) => template.id === selectedTemplateId);
-  const canReply = Boolean(status?.sendConfigured && localReplyWindow?.open);
+  const canReply = Boolean(canManageLead && status?.sendConfigured && localReplyWindow?.open);
   const unsupportedHeader = selectedTemplate?.headerVariableCount > 0 && selectedTemplate?.headerType === "TEXT";
   const headerImageMissing = selectedTemplate?.requiresHeaderImage && !headerImageUrl.trim();
   const missingBodyParameters = bodyParameters.some((value) => !value.trim());
-  const canSendTemplate = Boolean(status?.sendConfigured && selectedTemplate && !unsupportedHeader && !headerImageMissing && !missingBodyParameters);
+  const canSendTemplate = Boolean(canManageLead && status?.sendConfigured && selectedTemplate && !unsupportedHeader && !headerImageMissing && !missingBodyParameters);
 
   useEffect(() => {
     setLocalMessages(messages);
@@ -887,6 +906,7 @@ function WhatsAppPanel({ lead, user, status, messages, replyWindow, onChanged })
           <MessageSquareText size={16} /> {sending ? "Sending" : "Send Template"}
         </button>
       </form>
+      {!canManageLead && <p className="muted">This lead is not assigned to your account.</p>}
       <div className="template-tools">
         <button className="secondary" type="button" onClick={() => loadTemplates(true)} disabled={templatesLoading}>
           <RefreshCw size={16} /> {templatesLoading ? "Refreshing Templates" : "Refresh Templates"}
@@ -997,6 +1017,33 @@ function WhatsAppMessage({ item }) {
   );
 }
 
+function AssignmentDialog({ lead, users, onClose, onSubmit }) {
+  const [assignedTo, setAssignedTo] = useState(String(lead.assigned_to || ""));
+
+  function submit(e) {
+    e.preventDefault();
+    onSubmit({ action: "assign", assignedTo: assignedTo || null });
+  }
+
+  return (
+    <div className="modal-backdrop">
+      <form className="modal" onSubmit={submit}>
+        <h2>Assign Lead</h2>
+        <p className="muted">Choose an active team member for {lead.name}.</p>
+        <label>Assigned to</label>
+        <select value={assignedTo} onChange={(e) => setAssignedTo(e.target.value)}>
+          <option value="">Unassigned</option>
+          {users.filter((member) => member.active).map((member) => <option key={member.id} value={member.id}>{member.name} ({member.role})</option>)}
+        </select>
+        <div className="modal-actions">
+          <button type="button" className="secondary" onClick={onClose}>Cancel</button>
+          <button className="primary" type="submit">Save Assignment</button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
 function ActionDialog({ dialog, onClose, onSubmit }) {
   const { action } = dialog;
   const [comment, setComment] = useState("");
@@ -1077,7 +1124,7 @@ function Info({ label, value }) {
 
 function label(action) {
   return {
-    assignToMe: "Assign to Me",
+    assignLead: "Assign Lead",
     callUpdate: "Call / Update",
     comment: "Add Comment",
     siteVisited: "Mark Visited"

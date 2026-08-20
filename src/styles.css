@@ -413,10 +413,18 @@ a {
 .lead-col-name,
 .lead-col-requirement,
 .lead-col-plan,
-.lead-col-assigned,
 .lead-col-rejection {
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.inline-assignment {
+  width: 100%;
+  min-height: 34px;
+  border: 1px solid #cfd6df;
+  border-radius: 8px;
+  padding: 5px 8px;
+  background: #fff;
 }
 
 .comment-cell {
@@ -577,6 +585,10 @@ dd {
 
 .detail-assignment {
   width: min(280px, 100%);
+  margin-top: 12px;
+}
+
+.detail-claim {
   margin-top: 12px;
 }
 

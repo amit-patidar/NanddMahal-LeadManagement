@@ -24,7 +24,7 @@ COOKIE_SECURE=false
 
 Existing legacy users are migrated to salted password hashes on startup. Passwords are environment/database data and should not be committed.
 
-After login, an administrator can open **Users** to create sales or admin accounts, reset passwords, activate/deactivate users, and assign leads. Sales users only see leads assigned to their account; administrators see all leads.
+After login, an administrator can open **Users** to create sales, manager, or admin accounts, reset passwords, and activate/deactivate users. Administrators and managers can assign leads from the **Assign Lead** user list in lead tables or lead detail. Sales users only see leads assigned to their account and cannot assign leads.
 
 ## Google Sheets Sync
 
