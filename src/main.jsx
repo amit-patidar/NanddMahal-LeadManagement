@@ -6,7 +6,6 @@ import {
   CircleUserRound,
   ClipboardList,
   LayoutDashboard,
-  MessageSquareText,
   PhoneCall,
   RefreshCw,
   Search,
@@ -619,7 +618,7 @@ function LeadList({ config, user, users, openLead, openWhatsApp, embedded = fals
                       aria-label={`Open WhatsApp for ${lead.name}`}
                       onClick={() => openWhatsApp(lead.id)}
                     >
-                      <MessageSquareText size={16} />
+                      <WhatsAppIcon size={16} />
                     </button>
                     <button className="secondary" onClick={() => openLead(lead.id)}>Open</button>
                   </div>
@@ -702,7 +701,7 @@ function LeadDetail({ id, user, users, openWhatsApp, onBack }) {
           aria-label={`Open WhatsApp for ${lead.name}`}
           onClick={() => openWhatsApp(lead.id)}
         >
-          <MessageSquareText size={16} /> WhatsApp
+          <WhatsAppIcon size={16} /> WhatsApp
         </button>
       </div>
       <h2>Activity Timeline</h2>
@@ -765,7 +764,7 @@ function WhatsAppDrawer({ id, user, onClose }) {
         <header className="whatsapp-drawer-header">
           <div>
             <div className="whatsapp-drawer-title">
-              <MessageSquareText size={20} />
+              <WhatsAppIcon size={20} />
               <h2 id="whatsapp-drawer-title">WhatsApp</h2>
             </div>
             {data?.lead && <p className="whatsapp-drawer-lead"><strong>{data.lead.name}</strong><span>{data.lead.phone}</span></p>}
@@ -785,6 +784,19 @@ function WhatsAppDrawer({ id, user, onClose }) {
         )}
       </aside>
     </div>
+  );
+}
+
+function WhatsAppIcon({ size = 18 }) {
+  return (
+    <img
+      className="whatsapp-icon"
+      src="/whatsapp-logo-4456_512.png"
+      width={size}
+      height={size}
+      alt=""
+      aria-hidden="true"
+    />
   );
 }
 
@@ -959,7 +971,7 @@ function WhatsAppPanel({ lead, user, status, messages, replyWindow, compact = fa
     <section className="whatsapp-panel">
       {!compact && <div className="panel-heading">
         <div>
-          <h2><MessageSquareText size={20} /> WhatsApp</h2>
+          <h2><WhatsAppIcon size={20} /> WhatsApp</h2>
           <p className="muted">Callback URL path: <code>{status?.callbackUrlPath || "/api/webhooks/whatsapp/meta"}</code></p>
         </div>
         <span className={`badge ${status?.sendConfigured ? "connected" : "attempted"}`}>
@@ -996,7 +1008,7 @@ function WhatsAppPanel({ lead, user, status, messages, replyWindow, compact = fa
           </label>
         )}
         <button className="primary" type="submit" disabled={sending || !canSendTemplate}>
-          <MessageSquareText size={16} /> {sending ? "Sending" : "Send Template"}
+          <WhatsAppIcon size={16} /> {sending ? "Sending" : "Send Template"}
         </button>
       </form>
       {!canManageLead && <p className="muted">This lead is not assigned to your account.</p>}

@@ -411,6 +411,12 @@ a {
   padding: 6px;
 }
 
+.whatsapp-icon {
+  display: block;
+  flex: 0 0 auto;
+  object-fit: contain;
+}
+
 .lead-col-phone,
 .lead-col-status,
 .lead-col-actions {
