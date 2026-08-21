@@ -8,7 +8,20 @@ const headerAliases = {
   phone: ["phone", "phone number", "phone_number", "mobile", "mobile number", "mobile_number"],
   email: ["email", "email address"],
   campaign: ["campaign", "project", "campaign name", "campaign_name", "ad name", "ad_name"],
-  looking_for: ["what_are_you_looking_for?", "what are you looking for?", "looking for", "requirement", "property requirement", "looking_for"],
+  looking_for: [
+    "which_property_price_range_are_you_interested_in_exploring?",
+    "which_property_price_range_are_you_interested_in_exploring",
+    "which property price range are you interested in exploring?",
+    "property price range",
+    "price range",
+    "budget",
+    "what_are_you_looking_for?",
+    "what are you looking for?",
+    "looking for",
+    "requirement",
+    "property requirement",
+    "looking_for"
+  ],
   buy_plan: ["when_are_you_planning_to_buy?", "when are you planning to buy?", "planning to buy", "buy plan", "buy timeline", "buy_plan"]
 };
 
@@ -44,7 +57,7 @@ export async function syncGoogleSheet(userId = null) {
   let skipped = 0;
 
   for (const row of rows.slice(1)) {
-    const source = mapRow(headers, row);
+    const source = mapSheetRow(headers, row);
     if (!source.meta_lead_id) {
       skipped += 1;
       continue;
@@ -94,7 +107,7 @@ function normalizePrivateKey(value) {
     .replace(/\\n/g, "\n");
 }
 
-function mapRow(headers, row) {
+export function mapSheetRow(headers, row) {
   const source = {};
   for (const [field, aliases] of Object.entries(headerAliases)) {
     const index = headers.findIndex((h) => aliases.includes(h));

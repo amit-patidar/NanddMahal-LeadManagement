@@ -32,3 +32,4 @@ Lanes are `Now`, `Waiting`, and `Upcoming`. Completed rows remain marked `Done` 
 | T-002 | Done | Add password hashing and migration foundation | [history](audit/task-history/T-002.md) |
 | T-006 | Done | Add admin-created users with secure assigned-lead access | [history](audit/task-history/T-006.md) |
 | T-007 | Done | Fix admin assignment and sales self-claim workflow | [history](audit/task-history/T-007.md) |
+| T-009 | Done | Map the new Google Sheet budget header to Looking For | [history](audit/task-history/T-009.md) |
