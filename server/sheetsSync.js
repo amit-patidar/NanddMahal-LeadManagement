@@ -22,7 +22,17 @@ const headerAliases = {
     "property requirement",
     "looking_for"
   ],
-  buy_plan: ["when_are_you_planning_to_buy?", "when are you planning to buy?", "planning to buy", "buy plan", "buy timeline", "buy_plan"]
+  buy_plan: [
+    "when_you_are_planning_to_buy?",
+    "when_you_are_planning_to_buy",
+    "when you are planning to buy?",
+    "when_are_you_planning_to_buy?",
+    "when are you planning to buy?",
+    "planning to buy",
+    "buy plan",
+    "buy timeline",
+    "buy_plan"
+  ]
 };
 
 export async function syncGoogleSheet(userId = null) {

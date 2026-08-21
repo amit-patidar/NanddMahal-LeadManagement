@@ -47,9 +47,9 @@ Expected sheet columns can use common names such as:
 - Email
 - Campaign / Project
 - `which_property_price_range_are_you_interested_in_exploring?` mapped to `looking_for` (the CRM's Looking For field now stores budget/price range)
-- `when_are_you_planning_to_buy?` mapped to `buy_plan`
+- `when_you_are_planning_to_buy?` mapped to `buy_plan`
 
-The previous `what_are_you_looking_for?` header remains accepted as a transition fallback. `Buy Plan` continues to use `when_are_you_planning_to_buy?`.
+The previous `what_are_you_looking_for?` header remains accepted as a transition fallback. `Buy Plan` also accepts the previous `when_are_you_planning_to_buy?` spelling.
 
 ## Render Free Deployment
 
