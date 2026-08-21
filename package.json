@@ -19,6 +19,7 @@
   },
   "dependencies": {
     "@vitejs/plugin-react": "^5.0.0",
+    "cloudinary": "^2.10.0",
     "concurrently": "^9.2.0",
     "dotenv": "^17.4.2",
     "googleapis": "^156.0.0",

@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import {
   CalendarClock,
@@ -6,13 +6,14 @@ import {
   CircleUserRound,
   ClipboardList,
   LayoutDashboard,
-  MessageSquareText,
   PhoneCall,
   RefreshCw,
   Search,
   Siren,
   Star,
   UserCheck,
+  UsersRound,
+  X,
   XCircle
 } from "lucide-react";
 import "./styles.css";
@@ -22,29 +23,52 @@ const statusOptions = ["New", "Attempted", "Connected", "Follow Up", "Site Visit
 const rejectionReasons = ["Budget", "Location", "Not Interested", "Purchased Elsewhere", "Invalid Lead", "Other"];
 const callOutcomes = ["Attempted", "Connected", "Follow Up", "Site Visit", "Super Interested", "Rejected"];
 
+function canManageLeads(user) {
+  return user?.role === "admin" || user?.role === "manager";
+}
+
 function App() {
-  const [user, setUser] = useState(() => JSON.parse(localStorage.getItem("crmUser") || "null"));
+  const [user, setUser] = useState(null);
+  const [authChecked, setAuthChecked] = useState(false);
   const [users, setUsers] = useState([]);
   const [page, setPage] = useState("dashboard");
   const [missedTab, setMissedTab] = useState("missed-leads");
   const [allLeadFilters, setAllLeadFilters] = useState({ search: "", status: "", assignedTo: "", preset: "", dateField: "created" });
   const [selectedLeadId, setSelectedLeadId] = useState(null);
+  const [whatsappLeadId, setWhatsappLeadId] = useState(null);
 
   function navigate(nextPage) {
     setSelectedLeadId(null);
+    setWhatsappLeadId(null);
     setPage(nextPage);
   }
 
+  function openLead(id) {
+    setWhatsappLeadId(null);
+    setSelectedLeadId(id);
+  }
+
+  function openWhatsApp(id) {
+    setWhatsappLeadId(id);
+  }
+
   useEffect(() => {
-    request("/users").then(setUsers).catch(console.error);
+    request("/auth/me")
+      .then((result) => setUser(result.user))
+      .catch(() => setUser(null))
+      .finally(() => setAuthChecked(true));
   }, []);
 
-  if (!user) {
-    return <Login users={users} onLogin={(nextUser) => {
-      localStorage.setItem("crmUser", JSON.stringify(nextUser));
-      setUser(nextUser);
-    }} />;
-  }
+  useEffect(() => {
+    if (!canManageLeads(user)) {
+      setUsers([]);
+      return;
+    }
+    request("/users").then(setUsers).catch(console.error);
+  }, [user]);
+
+  if (!authChecked) return <div className="login-shell"><p className="muted">Loading CRM...</p></div>;
+  if (!user) return <Login onLogin={setUser} />;
 
   return (
     <div className="app">
@@ -65,6 +89,7 @@ function App() {
           <NavButton icon={<Siren />} label="Missed" id="missed" page={page} setPage={(id) => { setMissedTab("missed-leads"); navigate(id); }} />
           <NavButton icon={<XCircle />} label="Rejected Leads" id="rejected" page={page} setPage={navigate} />
           <NavButton icon={<ClipboardList />} label="All Leads" id="all" page={page} setPage={navigate} />
+          {user.role === "admin" && <NavButton icon={<UsersRound />} label="Users" id="users" page={page} setPage={navigate} />}
         </nav>
         <div className="profile">
           <CircleUserRound />
@@ -72,22 +97,30 @@ function App() {
             <strong>{user.name}</strong>
             <small>{user.role}</small>
           </div>
-          <button className="icon-button" title="Logout" onClick={() => {
-            localStorage.removeItem("crmUser");
+          <button className="icon-button" title="Logout" onClick={() => request("/auth/logout", { method: "POST" }).catch(() => {}).finally(() => {
+            setSelectedLeadId(null);
+            setWhatsappLeadId(null);
+            setPage("dashboard");
             setUser(null);
-          }}>x</button>
+          })}>x</button>
         </div>
       </aside>
 
       <main className="main">
+        <GlobalSearch openLead={openLead} />
         {selectedLeadId ? (
-          <LeadDetail id={selectedLeadId} user={user} onBack={() => setSelectedLeadId(null)} onChanged={() => {}} />
+          <LeadDetail id={selectedLeadId} user={user} users={users} openWhatsApp={openWhatsApp} onBack={() => {
+            setWhatsappLeadId(null);
+            setSelectedLeadId(null);
+          }} />
         ) : (
           <Page
             page={page}
             user={user}
             users={users}
-            openLead={setSelectedLeadId}
+            onUsersChanged={setUsers}
+            openLead={openLead}
+            openWhatsApp={openWhatsApp}
             setPage={navigate}
             missedTab={missedTab}
             setMissedTab={setMissedTab}
@@ -96,24 +129,101 @@ function App() {
           />
         )}
       </main>
+      {whatsappLeadId && <WhatsAppDrawer key={whatsappLeadId} id={whatsappLeadId} user={user} onClose={() => setWhatsappLeadId(null)} />}
     </div>
   );
 }
 
-function Login({ users, onLogin }) {
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [error, setError] = useState("");
+function GlobalSearch({ openLead }) {
+  const [term, setTerm] = useState("");
+  const [results, setResults] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [open, setOpen] = useState(false);
 
   useEffect(() => {
-    if (!email && users[0]) setEmail(users[0].email);
-  }, [users, email]);
+    const query = term.trim();
+    if (query.length < 2) {
+      setResults([]);
+      setOpen(false);
+      return;
+    }
+
+    let cancelled = false;
+    const timer = setTimeout(async () => {
+      setLoading(true);
+      try {
+        const params = new URLSearchParams({ search: query });
+        const data = await request(`/leads?${params}`);
+        if (!cancelled) {
+          setResults(data.slice(0, 8));
+          setOpen(true);
+        }
+      } catch {
+        if (!cancelled) {
+          setResults([]);
+          setOpen(true);
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }, 250);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [term]);
+
+  function choose(lead) {
+    openLead(lead.id);
+    setTerm("");
+    setResults([]);
+    setOpen(false);
+  }
+
+  return (
+    <div className="global-search">
+      <label className="global-search-box">
+        <Search size={17} />
+        <input
+          value={term}
+          onChange={(e) => setTerm(e.target.value)}
+          onFocus={() => term.trim().length >= 2 && setOpen(true)}
+          placeholder="Search name, phone, email, lead ID, or comments"
+        />
+      </label>
+      {open && (
+        <div className="global-search-results">
+          {loading ? (
+            <p className="muted">Searching...</p>
+          ) : results.length ? results.map((lead) => (
+            <button key={lead.id} type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => choose(lead)}>
+              <span>
+                <strong>{lead.name}</strong>
+                <small>{lead.phone} {lead.email ? `- ${lead.email}` : ""}</small>
+                {lead.matched_comment && <small className="search-match">Comment: {lead.matched_comment}</small>}
+              </span>
+              <StatusBadge status={lead.status} />
+            </button>
+          )) : (
+            <p className="muted">No matching leads found.</p>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Login({ onLogin }) {
+  const [identifier, setIdentifier] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
 
   async function submit(e) {
     e.preventDefault();
     setError("");
     try {
-      const result = await request("/auth/login", { method: "POST", body: { email, password } });
+      const result = await request("/auth/login", { method: "POST", body: { identifier, password } });
       onLogin(result.user);
     } catch (err) {
       setError(err.message);
@@ -130,12 +240,10 @@ function Login({ users, onLogin }) {
             <small>Private sales CRM</small>
           </div>
         </div>
-        <label>Email</label>
-        <select value={email} onChange={(e) => setEmail(e.target.value)}>
-          {users.map((u) => <option key={u.id} value={u.email}>{u.name} - {u.email}</option>)}
-        </select>
+        <label>Username or email</label>
+        <input type="email" autoComplete="username" value={identifier} onChange={(e) => setIdentifier(e.target.value)} required />
         <label>Password</label>
-        <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} />
+        <input type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} required />
         {error && <p className="error">{error}</p>}
         <button className="primary" type="submit">Login</button>
       </form>
@@ -143,25 +251,28 @@ function Login({ users, onLogin }) {
   );
 }
 
-function Page({ page, user, users, openLead, setPage, missedTab, setMissedTab, allLeadFilters, setAllLeadFilters }) {
+function Page({ page, user, users, onUsersChanged, openLead, openWhatsApp, setPage, missedTab, setMissedTab, allLeadFilters, setAllLeadFilters }) {
   if (page === "dashboard") return <Dashboard setPage={setPage} setMissedTab={setMissedTab} />;
-  if (page === "missed") return <Missed user={user} openLead={openLead} tab={missedTab} setTab={setMissedTab} />;
-  if (page === "all") return <AllLeads user={user} users={users} openLead={openLead} filters={allLeadFilters} setFilters={setAllLeadFilters} />;
+  if (page === "missed") return <Missed user={user} users={users} openLead={openLead} openWhatsApp={openWhatsApp} tab={missedTab} setTab={setMissedTab} />;
+  if (page === "all") return <AllLeads user={user} users={users} openLead={openLead} openWhatsApp={openWhatsApp} filters={allLeadFilters} setFilters={setAllLeadFilters} />;
+  if (page === "users") return user.role === "admin"
+    ? <UserManagement users={users} onUsersChanged={onUsersChanged} />
+    : <Dashboard setPage={setPage} setMissedTab={setMissedTab} />;
 
   const configs = {
-    new: { title: "New Leads", list: "new", quick: ["assignToMe", "callUpdate"] },
-    followups: { title: "Follow-ups", list: "followups", dateFilters: true, quick: ["callUpdate", "comment"] },
-    sitevisits: { title: "Site Visits", list: "sitevisits", dateFilters: true, quick: ["siteVisited", "callUpdate", "comment"] },
-    super: { title: "Super Interested", list: "super", quick: ["callUpdate", "Closed", "comment"] },
+    new: { title: "New Leads", list: "new", quick: ["assignLead", "callUpdate"] },
+    followups: { title: "Follow-ups", list: "followups", dateFilters: true, quick: ["assignLead", "callUpdate", "comment"] },
+    sitevisits: { title: "Site Visits", list: "sitevisits", dateFilters: true, quick: ["assignLead", "siteVisited", "callUpdate", "comment"] },
+    super: { title: "Super Interested", list: "super", quick: ["assignLead", "callUpdate", "Closed", "comment"] },
     rejected: {
       title: "Rejected Leads",
       subtitle: "Review rejected leads, reasons, and historical notes.",
       list: "rejected",
-      quick: ["comment"],
+      quick: ["assignLead", "comment"],
       extraColumns: ["rejectionReason"]
     }
   };
-  return <LeadList config={configs[page]} user={user} users={users} openLead={openLead} />;
+  return <LeadList config={configs[page]} user={user} users={users} openLead={openLead} openWhatsApp={openWhatsApp} />;
 }
 
 function Dashboard({ setPage, setMissedTab }) {
@@ -231,11 +342,98 @@ function SyncPanel() {
   );
 }
 
-function Missed({ user, openLead, tab, setTab }) {
+function UserManagement({ users, onUsersChanged }) {
+  const [members, setMembers] = useState(users);
+  const [form, setForm] = useState({ name: "", email: "", password: "", role: "sales" });
+  const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  async function load() {
+    const result = await request("/users");
+    setMembers(result);
+    onUsersChanged(result);
+  }
+
+  useEffect(() => {
+    load().catch((err) => setError(err.message));
+  }, []);
+
+  async function create(e) {
+    e.preventDefault();
+    setSaving(true);
+    setMessage("");
+    setError("");
+    try {
+      await request("/users", { method: "POST", body: form });
+      setForm({ name: "", email: "", password: "", role: "sales" });
+      setMessage("User created.");
+      await load();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function update(id, body) {
+    setMessage("");
+    setError("");
+    try {
+      await request(`/users/${id}`, { method: "PATCH", body });
+      setMessage("User updated.");
+      await load();
+    } catch (err) {
+      setError(err.message);
+    }
+  }
+
+  function resetPassword(member) {
+    const password = window.prompt(`Set a new password for ${member.name} (minimum 8 characters):`);
+    if (password === null) return;
+    update(member.id, { password });
+  }
+
+  return (
+    <section className="user-management">
+      <Header title="Users" subtitle="Create team accounts and control which users can access assigned leads." />
+      <form className="user-create-form" onSubmit={create}>
+        <label>Name<input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required /></label>
+        <label>Username or email<input type="email" autoComplete="off" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} required /></label>
+        <label>Temporary password<input type="password" autoComplete="new-password" minLength="8" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} required /></label>
+        <label>Role<select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })}><option value="sales">Sales</option><option value="manager">Manager</option><option value="admin">Admin</option></select></label>
+        <button className="primary" type="submit" disabled={saving}>{saving ? "Creating" : "Create User"}</button>
+      </form>
+      {message && <p className="success-text">{message}</p>}
+      {error && <p className="error">{error}</p>}
+      <div className="user-table-wrap">
+        <table className="user-table">
+          <thead><tr><th>Name</th><th>Username / email</th><th>Role</th><th>Status</th><th>Actions</th></tr></thead>
+          <tbody>
+            {members.map((member) => (
+              <tr key={member.id}>
+                <td>{member.name}</td>
+                <td>{member.email}</td>
+                <td>{member.role}</td>
+                <td><span className={`badge ${member.active ? "connected" : "attempted"}`}>{member.active ? "Active" : "Inactive"}</span></td>
+                <td className="user-actions">
+                  <button className="secondary" type="button" onClick={() => resetPassword(member)}>Reset password</button>
+                  <button className={member.active ? "danger" : "secondary"} type="button" onClick={() => update(member.id, { active: !member.active })}>{member.active ? "Deactivate" : "Activate"}</button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+}
+
+function Missed({ user, users, openLead, openWhatsApp, tab, setTab }) {
   const config = {
     title: "Missed",
     list: tab,
-    quick: tab === "missed-leads" ? ["assignToMe", "callUpdate"] : ["callUpdate", "comment"]
+    quick: tab === "missed-leads" ? ["assignLead", "callUpdate"] : ["assignLead", "callUpdate", "comment"]
   };
 
   return (
@@ -246,32 +444,32 @@ function Missed({ user, openLead, tab, setTab }) {
         <button className={tab === "missed-followups" ? "active" : ""} onClick={() => setTab("missed-followups")}>Missed Follow-ups</button>
         <button className={tab === "missed-sitevisits" ? "active" : ""} onClick={() => setTab("missed-sitevisits")}>Missed Site Visits</button>
       </div>
-      <LeadList config={config} user={user} openLead={openLead} embedded />
+      <LeadList config={config} user={user} users={users} openLead={openLead} openWhatsApp={openWhatsApp} embedded />
     </section>
   );
 }
 
-function AllLeads({ user, users, openLead, filters, setFilters }) {
+function AllLeads({ user, users, openLead, openWhatsApp, filters, setFilters }) {
   const params = new URLSearchParams(Object.entries(filters).filter(([, v]) => v));
   const config = { title: "All Leads", list: "", endpoint: `/leads?${params}`, quick: ["callUpdate", "comment"] };
 
   return (
     <section>
-      <Header title="All Leads" subtitle="Search by name or phone, then narrow by status, user, or date." />
-      <div className="tabs">
+      <Header title="All Leads" subtitle="Search by lead details or comments, then narrow by status, user, or date." />
+      {canManageLeads(user) && <div className="tabs">
         <button className={!filters.assignedTo ? "active" : ""} onClick={() => setFilters({ ...filters, assignedTo: "" })}>All Leads</button>
         <button className={String(filters.assignedTo) === String(user.id) ? "active" : ""} onClick={() => setFilters({ ...filters, assignedTo: String(user.id) })}>My Leads</button>
-      </div>
+      </div>}
       <div className="filters">
-        <label className="search-box"><Search size={16} /><input placeholder="Search name or phone" value={filters.search} onChange={(e) => setFilters({ ...filters, search: e.target.value })} /></label>
+        <label className="search-box"><Search size={16} /><input placeholder="Search name, phone, or comments" value={filters.search} onChange={(e) => setFilters({ ...filters, search: e.target.value })} /></label>
         <select value={filters.status} onChange={(e) => setFilters({ ...filters, status: e.target.value })}>
           <option value="">All statuses</option>
           {statusOptions.map((s) => <option key={s}>{s}</option>)}
         </select>
-        <select value={filters.assignedTo} onChange={(e) => setFilters({ ...filters, assignedTo: e.target.value })}>
+        {canManageLeads(user) && <select value={filters.assignedTo} onChange={(e) => setFilters({ ...filters, assignedTo: e.target.value })}>
           <option value="">All users</option>
-          {users.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
-        </select>
+          {users.filter((u) => u.active).map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
+        </select>}
         <select value={filters.dateField} onChange={(e) => setFilters({ ...filters, dateField: e.target.value })}>
           <option value="created">Created Date</option>
           <option value="followup">Follow-up Date</option>
@@ -285,7 +483,7 @@ function AllLeads({ user, users, openLead, filters, setFilters }) {
           <option value="month">This Month</option>
         </select>
       </div>
-      <LeadList config={config} user={user} openLead={openLead} embedded />
+      <LeadList config={config} user={user} users={users} openLead={openLead} openWhatsApp={openWhatsApp} embedded />
     </section>
   );
 }
@@ -305,11 +503,12 @@ const EXTRA_LEAD_COLUMNS = {
   rejectionReason: { key: "rejectionReason", label: "Rejection Reason", width: "180px", className: "lead-col-rejection" }
 };
 
-function LeadList({ config, user, openLead, embedded = false }) {
+function LeadList({ config, user, users, openLead, openWhatsApp, embedded = false }) {
   const [leads, setLeads] = useState([]);
   const [loading, setLoading] = useState(true);
   const [dateFilter, setDateFilter] = useState("today");
   const [dialog, setDialog] = useState(null);
+  const [assignmentLead, setAssignmentLead] = useState(null);
 
   const endpoint = useMemo(() => {
     if (config.endpoint) return config.endpoint;
@@ -333,14 +532,14 @@ function LeadList({ config, user, openLead, embedded = false }) {
   }, [endpoint]);
 
   async function quick(lead, action) {
-    if (action === "assignToMe") return mutate(lead.id, { action: "assignToMe" });
+    if (action === "assignLead") return setAssignmentLead(lead);
     if (action === "siteVisited") return mutate(lead.id, { action: "siteVisited" });
     if (["Follow Up", "Site Visit", "Rejected", "comment", "callUpdate"].includes(action)) return setDialog({ lead, action });
     return mutate(lead.id, { action: "status", status: action });
   }
 
   async function mutate(id, body) {
-    await request(`/leads/${id}`, { method: "POST", body: { ...body, userId: user.id } });
+    await request(`/leads/${id}`, { method: "POST", body });
     await load();
   }
 
@@ -388,18 +587,39 @@ function LeadList({ config, user, openLead, embedded = false }) {
                 <td className="lead-col-status"><StatusBadge status={lead.status} /></td>
                 <td className="lead-col-requirement">{lead.looking_for || "-"}</td>
                 <td className="lead-col-plan">{lead.buy_plan || "-"}</td>
-                <td className="lead-col-assigned">{lead.assigned_name || "Unassigned"}</td>
+                <td className="lead-col-assigned">
+                  {canManageLeads(user) ? (
+                    <select
+                      className="inline-assignment"
+                      value={lead.assigned_to || ""}
+                      onChange={(e) => mutate(lead.id, { action: "assign", assignedTo: e.target.value || null })}
+                      aria-label={`Assign ${lead.name}`}
+                    >
+                      <option value="">Unassigned</option>
+                      {users.filter((member) => member.active).map((member) => <option key={member.id} value={member.id}>{member.name}</option>)}
+                    </select>
+                  ) : lead.assigned_name || "Unassigned"}
+                </td>
                 <td className="comment-cell"><span className="comment-text">{lead.last_comment || "-"}</span></td>
                 {config.extraColumns?.includes("rejectionReason") && (
                   <td className="lead-col-rejection">{lead.rejection_reason || "-"}</td>
                 )}
                 <td className="lead-col-actions">
                   <div className="row-actions">
-                    {(config.quick || []).map((action) => (
+                    {(config.quick || []).filter((action) => canManageLeads(user) || action !== "assignLead").map((action) => (
                       <button key={action} className={buttonClass(action)} onClick={() => quick(lead, action)}>
                         {label(action)}
                       </button>
                     ))}
+                    <button
+                      type="button"
+                      className="icon-button row-whatsapp-button"
+                      title={`Open WhatsApp for ${lead.name}`}
+                      aria-label={`Open WhatsApp for ${lead.name}`}
+                      onClick={() => openWhatsApp(lead.id)}
+                    >
+                      <WhatsAppIcon size={16} />
+                    </button>
                     <button className="secondary" onClick={() => openLead(lead.id)}>Open</button>
                   </div>
                 </td>
@@ -410,16 +630,18 @@ function LeadList({ config, user, openLead, embedded = false }) {
         </table>
       </div>
       {dialog && <ActionDialog dialog={dialog} onClose={() => setDialog(null)} onSubmit={(body) => mutate(dialog.lead.id, body).then(() => setDialog(null))} />}
+      {assignmentLead && <AssignmentDialog lead={assignmentLead} users={users} onClose={() => setAssignmentLead(null)} onSubmit={(body) => mutate(assignmentLead.id, body).then(() => setAssignmentLead(null))} />}
     </section>
   );
 }
 
-function LeadDetail({ id, user, onBack }) {
+function LeadDetail({ id, user, users, openWhatsApp, onBack }) {
   const [data, setData] = useState(null);
   const [dialog, setDialog] = useState(null);
 
   async function load() {
-    setData(await request(`/leads/${id}`));
+    const leadData = await request(`/leads/${id}`);
+    setData(leadData);
   }
 
   useEffect(() => {
@@ -427,9 +649,13 @@ function LeadDetail({ id, user, onBack }) {
   }, [id]);
 
   async function mutate(body) {
-    await request(`/leads/${id}`, { method: "POST", body: { ...body, userId: user.id } });
+    await request(`/leads/${id}`, { method: "POST", body });
     setDialog(null);
     await load();
+  }
+
+  async function assignLead(e) {
+    await mutate({ action: "assign", assignedTo: e.target.value || null });
   }
 
   if (!data) return <p className="muted">Loading lead...</p>;
@@ -455,6 +681,12 @@ function LeadDetail({ id, user, onBack }) {
         <Info label="Follow-up" value={lead.followup_date || "-"} />
         <Info label="Site Visit" value={lead.site_visit_date || "-"} />
       </div>
+      {canManageLeads(user) && <label className="detail-assignment">Assigned to
+        <select value={lead.assigned_to || ""} onChange={assignLead}>
+          <option value="">Unassigned</option>
+          {users.filter((member) => member.active).map((member) => <option key={member.id} value={member.id}>{member.name}</option>)}
+        </select>
+      </label>}
       <div className="actions detail-actions">
         {["callUpdate", "comment", "Closed"].map((action) => (
           <button key={action} className={buttonClass(action)} onClick={() => {
@@ -462,6 +694,15 @@ function LeadDetail({ id, user, onBack }) {
             else mutate({ action: "status", status: action });
           }}>{label(action)}</button>
         ))}
+        <button
+          type="button"
+          className="secondary whatsapp-trigger"
+          title="Open WhatsApp"
+          aria-label={`Open WhatsApp for ${lead.name}`}
+          onClick={() => openWhatsApp(lead.id)}
+        >
+          <WhatsAppIcon size={16} /> WhatsApp
+        </button>
       </div>
       <h2>Activity Timeline</h2>
       <div className="timeline">
@@ -475,6 +716,436 @@ function LeadDetail({ id, user, onBack }) {
       </div>
       {dialog && <ActionDialog dialog={dialog} onClose={() => setDialog(null)} onSubmit={mutate} />}
     </section>
+  );
+}
+
+function WhatsAppDrawer({ id, user, onClose }) {
+  const [data, setData] = useState(null);
+  const [error, setError] = useState("");
+  const [loadAttempt, setLoadAttempt] = useState(0);
+  const closeButtonRef = useRef(null);
+
+  useEffect(() => {
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const onKeyDown = (event) => {
+      if (event.key === "Escape") onClose();
+    };
+    document.addEventListener("keydown", onKeyDown);
+    closeButtonRef.current?.focus();
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [id, onClose]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setData(null);
+    setError("");
+    Promise.all([
+      request(`/leads/${id}`),
+      request("/whatsapp/status").catch(() => null),
+      request(`/leads/${id}/whatsapp/messages`)
+    ]).then(([leadData, status, messages]) => {
+      if (cancelled) return;
+      setData({ lead: leadData.lead, status, messages: messages.messages || [], replyWindow: messages.replyWindow || null });
+    }).catch((err) => {
+      if (!cancelled) setError(err.message);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [id, loadAttempt]);
+
+  return (
+    <div className="whatsapp-drawer-backdrop">
+      <aside className="whatsapp-drawer" role="dialog" aria-modal="true" aria-labelledby="whatsapp-drawer-title">
+        <header className="whatsapp-drawer-header">
+          <div>
+            <div className="whatsapp-drawer-title">
+              <WhatsAppIcon size={20} />
+              <h2 id="whatsapp-drawer-title">WhatsApp</h2>
+            </div>
+            {data?.lead && <p className="whatsapp-drawer-lead"><strong>{data.lead.name}</strong><span>{data.lead.phone}</span></p>}
+            {data?.status && <p className="muted drawer-status-line"><span className={`badge ${data.status.sendConfigured ? "connected" : "attempted"}`}>{data.status.sendConfigured ? "Send Ready" : "Setup Needed"}</span> Callback URL: <code>{data.status.callbackUrlPath || "/api/webhooks/whatsapp/meta"}</code></p>}
+          </div>
+          <button ref={closeButtonRef} type="button" className="icon-button" title="Close WhatsApp" aria-label="Close WhatsApp" onClick={onClose}><X size={18} /></button>
+        </header>
+        {error ? (
+          <div className="drawer-state">
+            <p className="error">Unable to load WhatsApp for this lead: {error}</p>
+            <button type="button" className="secondary" onClick={() => setLoadAttempt((attempt) => attempt + 1)}>Retry</button>
+          </div>
+        ) : !data ? (
+          <p className="muted drawer-state">Loading WhatsApp...</p>
+        ) : (
+          <WhatsAppPanel lead={data.lead} user={user} status={data.status} messages={data.messages} replyWindow={data.replyWindow} compact />
+        )}
+      </aside>
+    </div>
+  );
+}
+
+function WhatsAppIcon({ size = 18 }) {
+  return (
+    <img
+      className="whatsapp-icon"
+      src="/whatsapp-logo-4456_512.png"
+      width={size}
+      height={size}
+      alt=""
+      aria-hidden="true"
+    />
+  );
+}
+
+function WhatsAppPanel({ lead, user, status, messages, replyWindow, compact = false }) {
+  const [localMessages, setLocalMessages] = useState(messages);
+  const [localReplyWindow, setLocalReplyWindow] = useState(replyWindow);
+  const [templates, setTemplates] = useState([]);
+  const [templatesLoading, setTemplatesLoading] = useState(false);
+  const [templatesError, setTemplatesError] = useState("");
+  const [selectedTemplateId, setSelectedTemplateId] = useState("");
+  const [bodyParameters, setBodyParameters] = useState([]);
+  const [headerImageUrl, setHeaderImageUrl] = useState("");
+  const [mediaAssets, setMediaAssets] = useState([]);
+  const [selectedMediaId, setSelectedMediaId] = useState("");
+  const [mediaLoading, setMediaLoading] = useState(false);
+  const [mediaUploading, setMediaUploading] = useState(false);
+  const [mediaError, setMediaError] = useState("");
+  const [replyText, setReplyText] = useState("");
+  const [sending, setSending] = useState(false);
+  const [replying, setReplying] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [refreshError, setRefreshError] = useState("");
+  const [lastRefreshedAt, setLastRefreshedAt] = useState("");
+  const [message, setMessage] = useState("");
+  const canManageLead = canManageLeads(user) || Number(lead.assigned_to) === Number(user.id);
+  const selectedTemplate = templates.find((template) => template.id === selectedTemplateId);
+  const canReply = Boolean(canManageLead && status?.sendConfigured && localReplyWindow?.open);
+  const unsupportedHeader = selectedTemplate?.headerVariableCount > 0 && selectedTemplate?.headerType === "TEXT";
+  const headerImageMissing = selectedTemplate?.requiresHeaderImage && !headerImageUrl.trim();
+  const missingBodyParameters = bodyParameters.some((value) => !value.trim());
+  const canSendTemplate = Boolean(canManageLead && status?.sendConfigured && selectedTemplate && !unsupportedHeader && !headerImageMissing && !missingBodyParameters);
+
+  useEffect(() => {
+    setLocalMessages(messages);
+  }, [messages]);
+
+  useEffect(() => {
+    setLocalReplyWindow(replyWindow);
+  }, [replyWindow]);
+
+  useEffect(() => {
+    loadTemplates();
+    loadMedia();
+  }, []);
+
+  useEffect(() => {
+    if (!selectedTemplate) {
+      setBodyParameters([]);
+      setHeaderImageUrl("");
+      return;
+    }
+    setBodyParameters(Array.from({ length: selectedTemplate.bodyVariableCount || 0 }, () => ""));
+    setHeaderImageUrl("");
+    setSelectedMediaId("");
+  }, [selectedTemplateId]);
+
+  useEffect(() => {
+    const asset = mediaAssets.find((item) => String(item.id) === String(selectedMediaId));
+    if (asset) setHeaderImageUrl(asset.secure_url || asset.secureUrl || asset.url);
+  }, [selectedMediaId, mediaAssets]);
+
+  async function loadTemplates(force = false) {
+    setTemplatesLoading(true);
+    setTemplatesError("");
+    try {
+      const result = await request(force ? "/whatsapp/templates/refresh" : "/whatsapp/templates", { method: force ? "POST" : "GET" });
+      const nextTemplates = result.templates || [];
+      setTemplates(nextTemplates);
+      if ((!selectedTemplateId || !nextTemplates.some((template) => template.id === selectedTemplateId)) && nextTemplates[0]) {
+        setSelectedTemplateId(nextTemplates[0].id);
+      }
+    } catch (err) {
+      setTemplatesError(err.message);
+    } finally {
+      setTemplatesLoading(false);
+    }
+  }
+
+  async function refreshMessages() {
+    setRefreshing(true);
+    setRefreshError("");
+    try {
+      const result = await request(`/leads/${lead.id}/whatsapp/messages`);
+      setLocalMessages(result.messages || []);
+      setLocalReplyWindow(result.replyWindow || null);
+      setLastRefreshedAt(new Date().toISOString());
+    } catch (err) {
+      setRefreshError(err.message);
+    } finally {
+      setRefreshing(false);
+    }
+  }
+
+  async function loadMedia() {
+    setMediaLoading(true);
+    setMediaError("");
+    try {
+      setMediaAssets(await request("/whatsapp/media"));
+    } catch (err) {
+      setMediaError(err.message);
+    } finally {
+      setMediaLoading(false);
+    }
+  }
+
+  async function uploadMedia(e) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    setMediaUploading(true);
+    setMediaError("");
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      const asset = await uploadRequest("/whatsapp/media", formData);
+      await loadMedia();
+      setSelectedMediaId(String(asset.id));
+      setHeaderImageUrl(asset.secure_url || asset.secureUrl || asset.url);
+    } catch (err) {
+      setMediaError(err.message);
+    } finally {
+      setMediaUploading(false);
+    }
+  }
+
+  async function send(e) {
+    e.preventDefault();
+    setSending(true);
+    setMessage("");
+    try {
+      const result = await request(`/leads/${lead.id}/whatsapp/send`, {
+        method: "POST",
+        body: {
+          templateName: selectedTemplate.name,
+          language: selectedTemplate.language,
+          parameters: bodyParameters.map((item) => item.trim()),
+          headerImageUrl
+        }
+      });
+      setMessage(`WhatsApp template sent${result.providerMessageId ? ` (${result.providerMessageId})` : ""}.`);
+      setBodyParameters(Array.from({ length: selectedTemplate.bodyVariableCount || 0 }, () => ""));
+      setHeaderImageUrl("");
+      await refreshMessages();
+    } catch (err) {
+      setMessage(err.message);
+    } finally {
+      setSending(false);
+    }
+  }
+
+  async function sendReply(e) {
+    e.preventDefault();
+    setReplying(true);
+    setMessage("");
+    try {
+      const result = await request(`/leads/${lead.id}/whatsapp/messages`, {
+        method: "POST",
+        body: { text: replyText }
+      });
+      setMessage(`WhatsApp reply sent${result.providerMessageId ? ` (${result.providerMessageId})` : ""}.`);
+      setReplyText("");
+      await refreshMessages();
+    } catch (err) {
+      setMessage(err.message);
+      await refreshMessages();
+    } finally {
+      setReplying(false);
+    }
+  }
+
+  return (
+    <section className="whatsapp-panel">
+      {!compact && <div className="panel-heading">
+        <div>
+          <h2><WhatsAppIcon size={20} /> WhatsApp</h2>
+          <p className="muted">Callback URL path: <code>{status?.callbackUrlPath || "/api/webhooks/whatsapp/meta"}</code></p>
+        </div>
+        <span className={`badge ${status?.sendConfigured ? "connected" : "attempted"}`}>
+          {status?.sendConfigured ? "Send Ready" : "Setup Needed"}
+        </span>
+      </div>}
+      <form className="whatsapp-send" onSubmit={send}>
+        <label>
+          Template
+          <select value={selectedTemplateId} onChange={(e) => setSelectedTemplateId(e.target.value)} disabled={templatesLoading || templates.length === 0} required>
+            {templatesLoading && <option>Loading templates...</option>}
+            {!templatesLoading && templates.length === 0 && <option>No approved templates</option>}
+            {!templatesLoading && templates.map((template) => (
+              <option key={template.id} value={template.id}>
+                {template.name} - {template.language}{template.category ? ` - ${template.category}` : ""}
+              </option>
+            ))}
+          </select>
+        </label>
+        <div className="template-summary">
+          <small className="muted">Language</small>
+          <strong>{selectedTemplate?.language || "-"}</strong>
+        </div>
+        {bodyParameters.map((value, index) => (
+          <label key={index}>
+            Variable {index + 1}
+            <input value={value} onChange={(e) => setBodyParameters((current) => current.map((item, itemIndex) => itemIndex === index ? e.target.value : item))} required />
+          </label>
+        ))}
+        {selectedTemplate?.requiresHeaderImage && (
+          <label className="template-media-field">
+            Header Image URL
+            <input value={headerImageUrl} onChange={(e) => setHeaderImageUrl(e.target.value)} placeholder="https://example.com/image.jpg" required />
+          </label>
+        )}
+        <button className="primary" type="submit" disabled={sending || !canSendTemplate}>
+          <WhatsAppIcon size={16} /> {sending ? "Sending" : "Send Template"}
+        </button>
+      </form>
+      {!canManageLead && <p className="muted">This lead is not assigned to your account.</p>}
+      <div className="template-tools">
+        <button className="secondary" type="button" onClick={() => loadTemplates(true)} disabled={templatesLoading}>
+          <RefreshCw size={16} /> {templatesLoading ? "Refreshing Templates" : "Refresh Templates"}
+        </button>
+        {templatesError && <small className="error">{templatesError}</small>}
+        {selectedTemplate?.bodyText && <small className="muted template-preview">{selectedTemplate.bodyText}</small>}
+        {unsupportedHeader && <small className="error">Text header variables are not supported yet. Use an image-header or body-only template.</small>}
+      </div>
+      {status?.mediaLibrary?.configured && (
+        <div className="media-library">
+          <div className="media-library-head">
+            <div>
+              <strong>Header Image Library</strong>
+              <small className="muted">
+                {selectedTemplate?.requiresHeaderImage
+                  ? "Select or upload a public header image for this template."
+                  : "Saved images are available when an image-header template is selected."}
+              </small>
+            </div>
+            <div className="media-actions">
+              <button className="secondary" type="button" onClick={loadMedia} disabled={mediaLoading}>
+                <RefreshCw size={16} /> {mediaLoading ? "Refreshing" : "Refresh Images"}
+              </button>
+              <label className="secondary file-button">
+                {mediaUploading ? "Uploading" : "Upload Image"}
+                <input type="file" accept="image/*" onChange={uploadMedia} disabled={mediaUploading} />
+              </label>
+            </div>
+          </div>
+          <label>
+            Saved Images
+            <select value={selectedMediaId} onChange={(e) => setSelectedMediaId(e.target.value)} disabled={mediaLoading || mediaAssets.length === 0}>
+              <option value="">{mediaAssets.length ? "Select saved image" : "No uploaded images"}</option>
+              {mediaAssets.map((asset) => (
+                <option key={asset.id} value={asset.id}>{asset.name}</option>
+              ))}
+            </select>
+          </label>
+          {headerImageUrl && <img className="media-preview" src={headerImageUrl} alt="Selected WhatsApp header" />}
+          {mediaError && <small className="error">{mediaError}</small>}
+        </div>
+      )}
+      {selectedTemplate?.requiresHeaderImage && !status?.mediaLibrary?.configured && (
+        <small className="error">Cloudinary image upload is not configured on this service.</small>
+      )}
+      {message && <p className={message.toLowerCase().includes("sent") ? "success-text" : "error"}>{message}</p>}
+      <div className="whatsapp-history">
+        <div className="whatsapp-history-head">
+          <div>
+            <strong>Recent WhatsApp Activity</strong>
+            {lastRefreshedAt && <small className="muted">Updated {formatDateTime(lastRefreshedAt)}</small>}
+          </div>
+          <button className="secondary" type="button" onClick={refreshMessages} disabled={refreshing} aria-label="Refresh WhatsApp messages">
+            <RefreshCw size={16} /> {refreshing ? "Refreshing" : "Refresh"}
+          </button>
+        </div>
+        {refreshError && <small className="error">{refreshError}</small>}
+        {localMessages.length === 0 ? (
+          <p className="muted">No WhatsApp messages recorded for this lead yet.</p>
+        ) : localMessages.map((item) => <WhatsAppMessage key={item.id} item={item} />)}
+      </div>
+      <form className="whatsapp-reply" onSubmit={sendReply}>
+        <label>
+          Direct Reply
+          <textarea
+            value={replyText}
+            onChange={(e) => setReplyText(e.target.value)}
+            placeholder="Type a WhatsApp reply"
+            disabled={!canReply || replying}
+            maxLength={4096}
+          />
+        </label>
+        <div className="reply-footer">
+          <small className="muted">{replyWindowText(localReplyWindow)}</small>
+          <button className="secondary" type="submit" disabled={!canReply || replying || !replyText.trim()}>
+            {replying ? "Sending Reply" : "Send Reply"}
+          </button>
+        </div>
+      </form>
+    </section>
+  );
+}
+
+function WhatsAppMessage({ item }) {
+  const failure = failureDetails(item);
+  return (
+    <div className={`whatsapp-message ${item.status === "failed" ? "failed-message" : ""}`}>
+      <span className="badge">{item.status}</span>
+      <div>
+        <strong>{item.direction} {item.message_type}</strong>
+        <p>{item.body || item.template_name || item.error_message || "-"}</p>
+        <small className="muted">{formatDateTime(item.created_at)}</small>
+        {item.status === "failed" && (
+          <div className="failure-log">
+            <strong>Failed: {failure.reason}</strong>
+            <small>Code: {failure.code}</small>
+            <small>Failed at: {formatDateTime(item.failed_at || item.created_at)}</small>
+            {failure.details && (
+              <details>
+                <summary>Details</summary>
+                <p>{failure.details}</p>
+              </details>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function AssignmentDialog({ lead, users, onClose, onSubmit }) {
+  const [assignedTo, setAssignedTo] = useState(String(lead.assigned_to || ""));
+
+  function submit(e) {
+    e.preventDefault();
+    onSubmit({ action: "assign", assignedTo: assignedTo || null });
+  }
+
+  return (
+    <div className="modal-backdrop">
+      <form className="modal" onSubmit={submit}>
+        <h2>Assign Lead</h2>
+        <p className="muted">Choose an active team member for {lead.name}.</p>
+        <label>Assigned to</label>
+        <select value={assignedTo} onChange={(e) => setAssignedTo(e.target.value)}>
+          <option value="">Unassigned</option>
+          {users.filter((member) => member.active).map((member) => <option key={member.id} value={member.id}>{member.name} ({member.role})</option>)}
+        </select>
+        <div className="modal-actions">
+          <button type="button" className="secondary" onClick={onClose}>Cancel</button>
+          <button className="primary" type="submit">Save Assignment</button>
+        </div>
+      </form>
+    </div>
   );
 }
 
@@ -558,7 +1229,7 @@ function Info({ label, value }) {
 
 function label(action) {
   return {
-    assignToMe: "Assign to Me",
+    assignLead: "Assign Lead",
     callUpdate: "Call / Update",
     comment: "Add Comment",
     siteVisited: "Mark Visited"
@@ -571,10 +1242,34 @@ function buttonClass(action) {
   return "secondary";
 }
 
-function nextDate(lead) {
-  if (lead.followup_date) return `FU ${lead.followup_date}${lead.followup_time ? ` ${lead.followup_time}` : ""}`;
-  if (lead.site_visit_date) return `SV ${lead.site_visit_date}${lead.site_visit_time ? ` ${lead.site_visit_time}` : ""}`;
-  return "-";
+function replyWindowText(replyWindow) {
+  if (replyWindow?.open && replyWindow.expiresAt) {
+    return `Free-text replies available until ${formatDateTime(replyWindow.expiresAt)}.`;
+  }
+  if (replyWindow?.lastInboundAt) {
+    return "The 24-hour reply window has expired. Send an approved template instead.";
+  }
+  return "Free-text replies unlock after the customer replies on WhatsApp.";
+}
+
+function failureDetails(item) {
+  const raw = parseRawPayload(item.raw_payload);
+  const error = raw?.status?.errors?.[0] || raw?.error || raw?.entry?.[0]?.changes?.[0]?.value?.statuses?.[0]?.errors?.[0];
+  return {
+    reason: item.error_message || error?.title || error?.message || "No failure reason provided",
+    code: item.error_code || error?.code || error?.error_subcode || "-",
+    details: error?.error_data?.details || error?.message || ""
+  };
+}
+
+function parseRawPayload(value) {
+  if (!value) return null;
+  if (typeof value === "object") return value;
+  try {
+    return JSON.parse(value);
+  } catch {
+    return null;
+  }
 }
 
 function activityText(a) {
@@ -605,10 +1300,22 @@ async function request(path, options = {}) {
   const response = await fetch(`${API}${path}`, {
     method: options.method || "GET",
     headers: { "content-type": "application/json" },
+    credentials: "same-origin",
     body: options.body ? JSON.stringify(options.body) : undefined
   });
   const data = await response.json();
   if (!response.ok) throw new Error(data.error || "Request failed");
+  return data;
+}
+
+async function uploadRequest(path, formData) {
+  const response = await fetch(`${API}${path}`, {
+    method: "POST",
+    credentials: "same-origin",
+    body: formData
+  });
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.error || "Upload failed");
   return data;
 }
 

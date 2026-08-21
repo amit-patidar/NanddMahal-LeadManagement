@@ -2,7 +2,7 @@
 
 Simple private CRM for a two-person real-estate sales team. It keeps Meta leads, follow-ups, site visits, comments, and activity history in one web app.
 
-See `DEVELOPMENT_NOTES.md` before making feature changes. It documents the current architecture, deployment, data rules, and known decisions.
+Before making feature changes, read `AGENTS.md`, then `CLAUDE.md`, `TASKS.md`, and `SYSTEMS.md`. `README.md` contains user-facing setup and deployment instructions.
 
 ## Run Locally
 
@@ -13,12 +13,18 @@ npm run dev
 
 Open the Vite URL shown in the terminal. The API runs on `http://localhost:4000`.
 
-Users are seeded for local development if the database is empty:
+If the database is empty, create the first administrator through these local `.env` values before starting the server:
 
-- `amitpatidar.7492@gmail.com`
-- `Ksengar413@gmail.com`
+```bash
+INITIAL_ADMIN_NAME=CRM Admin
+INITIAL_ADMIN_EMAIL=admin@example.com
+INITIAL_ADMIN_PASSWORD=<at least 8 characters>
+COOKIE_SECURE=false
+```
 
-Passwords are environment/database data and should not be committed.
+Existing legacy users are migrated to salted password hashes on startup. Passwords are environment/database data and should not be committed.
+
+After login, an administrator can open **Users** to create sales, manager, or admin accounts, reset passwords, and activate/deactivate users. Administrators and managers can assign leads from the **Assign Lead** user list in lead tables or lead detail. Sales users only see leads assigned to their account and cannot assign leads.
 
 ## Google Sheets Sync
 
@@ -40,8 +46,10 @@ Expected sheet columns can use common names such as:
 - Phone / Mobile
 - Email
 - Campaign / Project
-- `what_are_you_looking_for?` mapped to `looking_for`
-- `when_are_you_planning_to_buy?` mapped to `buy_plan`
+- `which_property_price_range_are_you_interested_in_exploring?` mapped to `looking_for` (the CRM's Looking For field now stores budget/price range)
+- `when_you_are_planning_to_buy?` mapped to `buy_plan`
+
+The previous `what_are_you_looking_for?` header remains accepted as a transition fallback. `Buy Plan` also accepts the previous `when_are_you_planning_to_buy?` spelling.
 
 ## Render Free Deployment
 
@@ -81,6 +89,10 @@ Environment variables:
 
 ```bash
 DATABASE_URL=<Render Internal Database URL>
+INITIAL_ADMIN_NAME=<first administrator name, only needed for an empty database>
+INITIAL_ADMIN_EMAIL=<first administrator email, only needed for an empty database>
+INITIAL_ADMIN_PASSWORD=<first administrator password, only needed for an empty database>
+COOKIE_SECURE=true
 GOOGLE_SHEET_ID=<sheet id>
 GOOGLE_WORKSHEET_NAME=Nandd Mahal Leads
 GOOGLE_PROJECT_ID=<service account project_id>
@@ -97,6 +109,57 @@ GOOGLE_SERVICE_ACCOUNT_JSON=<full service account JSON>
 ```
 
 Use either the three Google fields above or the full JSON field, not both.
+
+### WhatsApp Webhook Setup
+
+The WhatsApp automation work lives on the `feature/whatsapp-automation` branch until it is ready to merge.
+
+Production Meta callback URL:
+
+```text
+https://nanddmahal-leadmanagement.onrender.com/api/webhooks/whatsapp/meta
+```
+
+Test branch callback URL:
+
+```text
+https://nanddmahal-leadmanagement-1.onrender.com/api/webhooks/whatsapp/meta
+```
+
+Render environment variables:
+
+```bash
+WHATSAPP_PROVIDER=meta
+WHATSAPP_VERIFY_TOKEN=<secret verify token you create>
+WHATSAPP_APP_SECRET=<Meta app secret>
+WHATSAPP_ACCESS_TOKEN=<Meta WhatsApp access token>
+WHATSAPP_PHONE_NUMBER_ID=<Meta WhatsApp phone number id>
+WHATSAPP_BUSINESS_ACCOUNT_ID=<Meta WhatsApp business account id>
+WHATSAPP_API_VERSION=v23.0
+WHATSAPP_WEBHOOK_REQUIRE_SIGNATURE=true
+```
+
+The same callback route handles Meta verification with `GET` and incoming webhook events with `POST`.
+
+The lead detail WhatsApp panel supports:
+
+- Approved template sends for business-initiated messages.
+- Approved-template dropdown loaded from Meta WhatsApp Manager.
+- Image-header templates by entering a public HTTPS header image URL.
+- Cloudinary-backed media library for reusable WhatsApp header images, including upload, refresh, saved-image dropdown, and preview.
+- Direct/free-text replies only when the lead has an inbound WhatsApp message inside the 24-hour customer service window.
+- Inline failed-message reasons and a WhatsApp-only message refresh button.
+
+Cloudinary env vars for WhatsApp image uploads:
+
+```bash
+CLOUDINARY_CLOUD_NAME=<cloud name>
+CLOUDINARY_API_KEY=<api key>
+CLOUDINARY_API_SECRET=<api secret>
+CLOUDINARY_WHATSAPP_FOLDER=nandd-mahal/whatsapp-headers
+```
+
+When Cloudinary is configured, the WhatsApp panel shows **Header Image Library** with **Upload Image** and **Refresh Images**. Uploaded files are stored in Cloudinary and their public URLs are saved in the CRM database for reuse. Keep WhatsApp header images under 6 MB.
 
 ### 4. Import Local Data Into Render PostgreSQL
 
@@ -128,11 +191,11 @@ Included:
 - Follow-up and site visit scheduling
 - Dynamic missed lead calculations
 - Lead detail with permanent activity timeline
+- WhatsApp webhook foundation, template send, and 24-hour direct replies on feature branch
 - SQLite for local development and PostgreSQL for Render deployment
 
 Not included in v1:
 
-- WhatsApp automation
 - Email marketing
 - Finance/inventory
 - Complex analytics

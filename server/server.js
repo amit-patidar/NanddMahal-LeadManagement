@@ -18,7 +18,29 @@ import {
   tomorrowDate,
   yesterdayDate
 } from "./db.js";
+import {
+  authenticateUser,
+  clearSessionCookie,
+  createSession,
+  destroySession,
+  getSessionUser,
+  publicUser,
+  setSessionCookie
+} from "./auth.js";
+import { hashPassword } from "./passwords.js";
 import { syncGoogleSheet } from "./sheetsSync.js";
+import { cloudinaryStatus, listWhatsAppMedia, uploadWhatsAppMedia } from "./cloudinaryMedia.js";
+import { verifyMetaChallenge, verifyMetaSignature } from "./whatsappProvider.js";
+import { parseMetaWebhook } from "./whatsappWebhook.js";
+import {
+  getApprovedMetaTemplates,
+  processWhatsAppEvents,
+  sendLeadWhatsAppText,
+  sendLeadWhatsAppTemplate,
+  whatsAppReplyWindowForLead,
+  whatsappMessagesForLead,
+  whatsappStatus
+} from "./whatsappService.js";
 
 const PORT = Number(process.env.PORT || 4000);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -26,7 +48,7 @@ const distDir = path.join(__dirname, "..", "dist");
 
 await initDb();
 
-const server = http.createServer(async (req, res) => {
+export const server = http.createServer(async (req, res) => {
   try {
     const url = new URL(req.url, `http://${req.headers.host}`);
     if (req.method === "OPTIONS") {
@@ -41,18 +63,87 @@ const server = http.createServer(async (req, res) => {
       return json(res, 200, { ok: true });
     }
 
-    if (req.method === "GET" && url.pathname === "/api/users") {
-      return json(res, 200, await all("SELECT id, name, email, role FROM users WHERE active ORDER BY id"));
+    if (req.method === "GET" && url.pathname === "/api/webhooks/whatsapp/meta") {
+      const verification = verifyMetaChallenge(url.searchParams);
+      if (!verification.ok) return text(res, 403, "Webhook verification failed");
+      return text(res, 200, verification.challenge);
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/webhooks/whatsapp/meta") {
+      const rawBody = await readRaw(req);
+      const signature = req.headers["x-hub-signature-256"];
+      if (!verifyMetaSignature(rawBody, Array.isArray(signature) ? signature[0] : signature)) {
+        return json(res, 403, { error: "Invalid WhatsApp webhook signature" });
+      }
+      const payload = rawBody.length ? JSON.parse(rawBody.toString("utf8")) : {};
+      const events = parseMetaWebhook(payload);
+      const results = await processWhatsAppEvents(events);
+      return json(res, 200, { ok: true, received: events.length, results });
     }
 
     if (req.method === "POST" && url.pathname === "/api/auth/login") {
       const body = await readJson(req);
-      const user = await get(
-        "SELECT id, name, email, role FROM users WHERE email = :email AND password = :password AND active",
-        { email: body.email, password: body.password }
-      );
-      if (!user) return json(res, 401, { error: "Invalid login" });
+      const user = await authenticateUser(body.identifier || body.email || body.username, body.password);
+      if (!user) return json(res, 401, { error: "Invalid username or password" });
+      setSessionCookie(res, await createSession(user.id));
       return json(res, 200, { user });
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/auth/me") {
+      const user = await getSessionUser(req);
+      if (!user) return json(res, 401, { error: "Authentication required" });
+      return json(res, 200, { user });
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/auth/logout") {
+      await destroySession(req);
+      clearSessionCookie(res);
+      return json(res, 200, { ok: true });
+    }
+
+    const user = await getSessionUser(req);
+    if (!user) return json(res, 401, { error: "Authentication required" });
+
+    if (req.method === "GET" && url.pathname === "/api/whatsapp/status") {
+      return json(res, 200, { ...whatsappStatus(), mediaLibrary: cloudinaryStatus() });
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/whatsapp/templates") {
+      return json(res, 200, await getApprovedMetaTemplates());
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/whatsapp/templates/refresh") {
+      return json(res, 200, await getApprovedMetaTemplates({ force: true }));
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/whatsapp/media") {
+      return json(res, 200, await listWhatsAppMedia());
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/whatsapp/media") {
+      const rawBody = await readRaw(req, 6 * 1024 * 1024);
+      const upload = parseMultipartUpload(rawBody, req.headers["content-type"] || "");
+      if (!upload.file) throw new Error("Image file is required.");
+      const asset = await uploadWhatsAppMedia({ file: upload.file, userId: user.id });
+      return json(res, 200, asset);
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/users") {
+      requireLeadManager(user);
+      return json(res, 200, await all("SELECT id, name, email, role, active FROM users ORDER BY id"));
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/users") {
+      requireAdmin(user);
+      const body = await readJson(req);
+      return json(res, 201, { user: await createUser(body) });
+    }
+
+    const userMatch = url.pathname.match(/^\/api\/users\/(\d+)$/);
+    if (req.method === "PATCH" && userMatch) {
+      requireAdmin(user);
+      const body = await readJson(req);
+      return json(res, 200, { user: await updateUser(Number(userMatch[1]), body, user) });
     }
 
     if (req.method === "GET" && url.pathname === "/api/meta") {
@@ -60,18 +151,18 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (req.method === "GET" && url.pathname === "/api/dashboard") {
-      return json(res, 200, await dashboardCounts());
+      return json(res, 200, await dashboardCounts(user));
     }
 
     if (req.method === "GET" && url.pathname === "/api/leads") {
-      return json(res, 200, await listLeads(Object.fromEntries(url.searchParams.entries())));
+      return json(res, 200, await listLeads(Object.fromEntries(url.searchParams.entries()), user));
     }
 
     const leadMatch = url.pathname.match(/^\/api\/leads\/(\d+)$/);
     if (req.method === "GET" && leadMatch) {
       const id = Number(leadMatch[1]);
       const lead = await leadById(id);
-      if (!lead) return json(res, 404, { error: "Lead not found" });
+      assertLeadAccess(lead, user);
       const activities = await all(
         `SELECT a.*, u.name AS user_name
          FROM lead_activities a
@@ -83,23 +174,62 @@ const server = http.createServer(async (req, res) => {
       return json(res, 200, { lead, activities });
     }
 
+    const leadWhatsAppMessagesMatch = url.pathname.match(/^\/api\/leads\/(\d+)\/whatsapp\/messages$/);
+    if (req.method === "GET" && leadWhatsAppMessagesMatch) {
+      const id = Number(leadWhatsAppMessagesMatch[1]);
+      assertLeadAccess(await leadById(id), user);
+      const messages = await whatsappMessagesForLead(id);
+      const replyWindow = await whatsAppReplyWindowForLead(id);
+      return json(res, 200, { messages, replyWindow });
+    }
+
+    const leadWhatsAppTextMatch = url.pathname.match(/^\/api\/leads\/(\d+)\/whatsapp\/messages$/);
+    if (req.method === "POST" && leadWhatsAppTextMatch) {
+      const id = Number(leadWhatsAppTextMatch[1]);
+      const body = await readJson(req);
+      assertLeadAccess(await leadById(id), user);
+      const result = await sendLeadWhatsAppText({
+        leadId: id,
+        userId: user.id,
+        body: body.text || body.body || ""
+      });
+      return json(res, 200, result);
+    }
+
+    const leadWhatsAppSendMatch = url.pathname.match(/^\/api\/leads\/(\d+)\/whatsapp\/send$/);
+    if (req.method === "POST" && leadWhatsAppSendMatch) {
+      const id = Number(leadWhatsAppSendMatch[1]);
+      const body = await readJson(req);
+      assertLeadAccess(await leadById(id), user);
+      const result = await sendLeadWhatsAppTemplate({
+        leadId: id,
+        userId: user.id,
+        templateName: body.templateName,
+        language: body.language || "en",
+        parameters: Array.isArray(body.parameters) ? body.parameters : [],
+        headerImageUrl: body.headerImageUrl || ""
+      });
+      return json(res, 200, result);
+    }
+
     if (req.method === "POST" && leadMatch) {
       const id = Number(leadMatch[1]);
       const body = await readJson(req);
-      const userId = currentUserId(req, body);
-      return json(res, 200, await updateLead(id, body, userId));
+      const lead = await leadById(id);
+      assertLeadAccess(lead, user);
+      return json(res, 200, await updateLead(id, body, user));
     }
 
     if (req.method === "POST" && url.pathname === "/api/sync") {
-      const body = await readJson(req);
-      const result = await syncGoogleSheet(currentUserId(req, body));
+      requireAdmin(user);
+      const result = await syncGoogleSheet(user.id);
       return json(res, 200, result);
     }
 
     return json(res, 404, { error: "Not found" });
   } catch (error) {
-    console.error(error);
-    return json(res, 500, { error: error.message || "Server error" });
+    if (!(error instanceof HttpError && error.status < 500)) console.error(error);
+    return json(res, error.status || 500, { error: error.message || "Server error" });
   }
 });
 
@@ -107,35 +237,102 @@ server.listen(PORT, () => {
   console.log(`CRM API running on http://localhost:${PORT}`);
 });
 
-async function dashboardCounts() {
+async function createUser(body) {
+  const name = String(body.name || "").trim();
+  const email = String(body.email || body.username || "").trim().toLowerCase();
+  const password = String(body.password || "");
+  const role = body.role || "sales";
+  if (!name || !email || !password) throw new HttpError(400, "Name, username/email, and password are required.");
+  if (password.length < 8) throw new HttpError(400, "Password must be at least 8 characters.");
+  if (!email.includes("@")) throw new HttpError(400, "Username must be a valid email address.");
+  if (!["admin", "manager", "sales"].includes(role)) throw new HttpError(400, "Invalid user role.");
+
+  const existing = await get("SELECT id FROM users WHERE LOWER(email) = :email", { email });
+  if (existing) throw new HttpError(409, "A user with this username/email already exists.");
+
+  const credentials = hashPassword(password);
+  const active = body.active === false ? (isPostgresBoolean() ? false : 0) : (isPostgresBoolean() ? true : 1);
+  await run(
+    `INSERT INTO users (name, email, password_hash, password_salt, role, active)
+     VALUES (:name, :email, :passwordHash, :passwordSalt, :role, :active)`,
+    { name, email, passwordHash: credentials.hash, passwordSalt: credentials.salt, role, active }
+  );
+  return publicUser(await get("SELECT id, name, email, role, active FROM users WHERE LOWER(email) = :email", { email }));
+}
+
+async function updateUser(id, body, actor) {
+  const target = await get("SELECT id, name, email, role, active FROM users WHERE id = :id", { id });
+  if (!target) throw new HttpError(404, "User not found.");
+
+  if (body.active === false && Number(target.id) === Number(actor.id)) {
+    throw new HttpError(400, "You cannot deactivate your own account.");
+  }
+  if (body.active === false && target.role === "admin") {
+    const adminCount = await scalar("SELECT COUNT(*) FROM users WHERE role = 'admin' AND active");
+    if (adminCount <= 1) throw new HttpError(400, "At least one active administrator is required.");
+  }
+
+  if (Object.hasOwn(body, "password")) {
+    const password = String(body.password || "");
+    if (password.length < 8) throw new HttpError(400, "Password must be at least 8 characters.");
+    const credentials = hashPassword(password);
+    await run(
+      `UPDATE users
+       SET password_hash = :passwordHash,
+           password_salt = :passwordSalt
+       WHERE id = :id`,
+      { id, passwordHash: credentials.hash, passwordSalt: credentials.salt }
+    );
+  }
+
+  if (Object.hasOwn(body, "active")) {
+    await run("UPDATE users SET active = :active WHERE id = :id", {
+      id,
+      active: body.active ? (isPostgresBoolean() ? true : 1) : (isPostgresBoolean() ? false : 0)
+    });
+  }
+
+  return publicUser(await get("SELECT id, name, email, role, active FROM users WHERE id = :id", { id }));
+}
+
+function isPostgresBoolean() {
+  return Boolean(process.env.DATABASE_URL);
+}
+
+async function dashboardCounts(user) {
   const today = dateOnly();
-  const params = { today, cutoff: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString() };
+  const params = {
+    today,
+    cutoff: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
+  };
+  const scope = canManageLeads(user) ? "" : " AND assigned_to = :accessUserId";
+  if (!canManageLeads(user)) params.accessUserId = user.id;
   return {
-    newLeads: await scalar("SELECT COUNT(*) FROM leads WHERE status = 'New'"),
-    attemptedLeads: await scalar("SELECT COUNT(*) FROM leads WHERE status = 'Attempted'"),
+    newLeads: await scalar(`SELECT COUNT(*) FROM leads WHERE status = 'New'${scope}`, params),
+    attemptedLeads: await scalar(`SELECT COUNT(*) FROM leads WHERE status = 'Attempted'${scope}`, params),
     missedLeads: await scalar(
       `SELECT COUNT(*) FROM leads
        WHERE status IN ('New', 'Attempted')
        AND last_activity_at < :cutoff
        AND followup_date IS NULL
-       AND site_visit_date IS NULL`,
+       AND site_visit_date IS NULL${scope}`,
       params
     ),
-    todaysFollowups: await scalar("SELECT COUNT(*) FROM leads WHERE status = 'Follow Up' AND followup_date = :today", params),
-    missedFollowups: await scalar("SELECT COUNT(*) FROM leads WHERE status = 'Follow Up' AND followup_date < :today", params),
-    todaysSiteVisits: await scalar("SELECT COUNT(*) FROM leads WHERE status = 'Site Visit' AND site_visit_date = :today", params),
+    todaysFollowups: await scalar(`SELECT COUNT(*) FROM leads WHERE status = 'Follow Up' AND followup_date = :today${scope}`, params),
+    missedFollowups: await scalar(`SELECT COUNT(*) FROM leads WHERE status = 'Follow Up' AND followup_date < :today${scope}`, params),
+    todaysSiteVisits: await scalar(`SELECT COUNT(*) FROM leads WHERE status = 'Site Visit' AND site_visit_date = :today${scope}`, params),
     missedSiteVisits: await scalar(
       `SELECT COUNT(*) FROM leads
        WHERE status = 'Site Visit'
        AND site_visit_date < :today
-       AND site_visit_completed_at IS NULL`,
+       AND site_visit_completed_at IS NULL${scope}`,
       params
     ),
-    superInterested: await scalar("SELECT COUNT(*) FROM leads WHERE status = 'Super Interested'")
+    superInterested: await scalar(`SELECT COUNT(*) FROM leads WHERE status = 'Super Interested'${scope}`, params)
   };
 }
 
-async function listLeads(query) {
+async function listLeads(query, user) {
   const clauses = [];
   const params = {
     today: dateOnly(),
@@ -146,7 +343,10 @@ async function listLeads(query) {
     cutoff: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
   };
 
-  if (query.view === "my" && query.userId) {
+  if (!canManageLeads(user)) {
+    clauses.push("l.assigned_to = :accessUserId");
+    params.accessUserId = user.id;
+  } else if (query.view === "my" && query.userId) {
     clauses.push("l.assigned_to = :userId");
     params.userId = Number(query.userId);
   }
@@ -154,12 +354,24 @@ async function listLeads(query) {
     clauses.push("l.status = :status");
     params.status = query.status;
   }
-  if (query.assignedTo) {
+  if (canManageLeads(user) && query.assignedTo) {
     clauses.push("l.assigned_to = :assignedTo");
     params.assignedTo = Number(query.assignedTo);
   }
   if (query.search) {
-    clauses.push("(LOWER(l.name) LIKE :search OR l.phone LIKE :search)");
+    clauses.push(`(
+      LOWER(l.name) LIKE :search
+      OR l.phone LIKE :search
+      OR LOWER(COALESCE(l.email, '')) LIKE :search
+      OR LOWER(l.meta_lead_id) LIKE :search
+      OR LOWER(COALESCE(l.last_comment, '')) LIKE :search
+      OR EXISTS (
+        SELECT 1
+        FROM lead_activities search_activity
+        WHERE search_activity.lead_id = l.id
+          AND LOWER(COALESCE(search_activity.comment, '')) LIKE :search
+      )
+    )`);
     params.search = `%${query.search.toLowerCase()}%`;
   }
 
@@ -167,8 +379,22 @@ async function listLeads(query) {
   applyDatePreset(query, clauses, params);
 
   const where = clauses.length ? `WHERE ${clauses.join(" AND ")}` : "";
+  const matchedComment = query.search
+    ? `,
+       CASE
+         WHEN LOWER(COALESCE(l.last_comment, '')) LIKE :search THEN l.last_comment
+         ELSE (
+           SELECT search_activity.comment
+           FROM lead_activities search_activity
+           WHERE search_activity.lead_id = l.id
+             AND LOWER(COALESCE(search_activity.comment, '')) LIKE :search
+           ORDER BY search_activity.created_at DESC, search_activity.id DESC
+           LIMIT 1
+         )
+       END AS matched_comment`
+    : "";
   return all(
-    `SELECT l.*, u.name AS assigned_name
+    `SELECT l.*, u.name AS assigned_name${matchedComment}
      FROM leads l
      LEFT JOIN users u ON u.id = l.assigned_to
      ${where}
@@ -237,33 +463,57 @@ function dateField(query) {
   return query.list === "sitevisits" || query.list === "missed-sitevisits" ? "l.site_visit_date" : "l.followup_date";
 }
 
-async function updateLead(id, body, userId) {
+async function updateLead(id, body, user) {
   const lead = await leadById(id);
   if (!lead) throw new Error("Lead not found");
 
   if (body.action === "assignToMe") {
-    await run("UPDATE leads SET assigned_to = :userId WHERE id = :id", { id, userId });
-    await addActivity({ leadId: id, userId, activityType: "Assigned", oldValue: lead.assigned_name, newValue: String(userId), comment: "Assigned to me" });
+    requireLeadManager(user);
+    await run("UPDATE leads SET assigned_to = :userId WHERE id = :id", { id, userId: user.id });
+    await addActivity({ leadId: id, userId: user.id, activityType: "Assigned", oldValue: lead.assigned_name, newValue: user.name, comment: "Assigned to me" });
+    return leadById(id);
+  }
+
+  if (body.action === "assign") {
+    requireLeadManager(user);
+    const assignedTo = body.assignedTo ? Number(body.assignedTo) : null;
+    const assignee = assignedTo ? await get("SELECT id, name FROM users WHERE id = :id AND active", { id: assignedTo }) : null;
+    if (assignedTo && !assignee) throw new HttpError(400, "Assigned user is not active or does not exist.");
+    await run("UPDATE leads SET assigned_to = :assignedTo WHERE id = :id", { id, assignedTo });
+    await addActivity({
+      leadId: id,
+      userId: user.id,
+      activityType: "Assigned",
+      oldValue: lead.assigned_name || "Unassigned",
+      newValue: assignee?.name || "Unassigned",
+      comment: "Assignment updated by lead manager"
+    });
     return leadById(id);
   }
 
   if (body.action === "comment") {
-    await addActivity({ leadId: id, userId, activityType: "Comment Added", comment: body.comment || "" });
+    await addActivity({ leadId: id, userId: user.id, activityType: "Comment Added", comment: body.comment || "" });
     return leadById(id);
   }
 
   if (body.action === "siteVisited") {
     await run("UPDATE leads SET site_visit_completed_at = :now WHERE id = :id", { id, now: isoNow() });
-    await addActivity({ leadId: id, userId, activityType: "Site Visit Completed", comment: body.comment || "Site visit marked complete" });
+    await addActivity({ leadId: id, userId: user.id, activityType: "Site Visit Completed", comment: body.comment || "Site visit marked complete" });
     return leadById(id);
   }
 
   if (body.action === "status") {
     if (!STATUSES.includes(body.status)) throw new Error("Invalid status");
+    let assignedTo = lead.assigned_to;
+    if (canManageLeads(user) && Object.hasOwn(body, "assignedTo")) {
+      assignedTo = body.assignedTo ? Number(body.assignedTo) : null;
+      const assignee = assignedTo ? await get("SELECT id FROM users WHERE id = :id AND active", { id: assignedTo }) : null;
+      if (assignedTo && !assignee) throw new HttpError(400, "Assigned user is not active or does not exist.");
+    }
     const updates = {
       id,
       status: body.status,
-      assignedTo: body.assignedTo || lead.assigned_to,
+      assignedTo,
       followupDate: body.followupDate || null,
       followupTime: body.followupTime || null,
       siteVisitDate: body.siteVisitDate || null,
@@ -275,7 +525,7 @@ async function updateLead(id, body, userId) {
     await run(
       `UPDATE leads
        SET status = :status,
-           assigned_to = COALESCE(:assignedTo, assigned_to),
+           assigned_to = :assignedTo,
            followup_date = :followupDate,
            followup_time = :followupTime,
            site_visit_date = :siteVisitDate,
@@ -288,7 +538,7 @@ async function updateLead(id, body, userId) {
     );
     await addActivity({
       leadId: id,
-      userId,
+      userId: user.id,
       activityType: activityForStatus(body.status, lead.status, body),
       oldValue: lead.status,
       newValue: body.status,
@@ -320,20 +570,51 @@ async function leadById(id) {
   );
 }
 
+function requireAdmin(user) {
+  if (user.role !== "admin") throw new HttpError(403, "Administrator access required.");
+}
+
+function requireLeadManager(user) {
+  if (!canManageLeads(user)) throw new HttpError(403, "Administrator or manager access required.");
+}
+
+function canManageLeads(user) {
+  return user.role === "admin" || user.role === "manager";
+}
+
+function assertLeadAccess(lead, user) {
+  if (!lead) throw new HttpError(404, "Lead not found");
+  if (!canManageLeads(user) && Number(lead.assigned_to) !== Number(user.id)) {
+    throw new HttpError(403, "You can only access leads assigned to you.");
+  }
+}
+
+class HttpError extends Error {
+  constructor(status, message) {
+    super(message);
+    this.status = status;
+  }
+}
+
 async function scalar(sql, params = {}) {
   const row = await get(sql, params);
   return Number(row.count ?? row["COUNT(*)"] ?? 0);
 }
 
-function currentUserId(req, body = {}) {
-  return Number(req.headers["x-user-id"] || body.userId || 1);
+async function readJson(req) {
+  const raw = await readRaw(req);
+  return raw.length ? JSON.parse(raw.toString("utf8")) : {};
 }
 
-async function readJson(req) {
+async function readRaw(req, limit = 1024 * 1024) {
   const chunks = [];
-  for await (const chunk of req) chunks.push(chunk);
-  const raw = Buffer.concat(chunks).toString("utf8");
-  return raw ? JSON.parse(raw) : {};
+  let size = 0;
+  for await (const chunk of req) {
+    size += chunk.length;
+    if (size > limit) throw new Error("Request body too large");
+    chunks.push(chunk);
+  }
+  return Buffer.concat(chunks);
 }
 
 function json(res, status, payload) {
@@ -341,9 +622,58 @@ function json(res, status, payload) {
     "content-type": "application/json",
     "access-control-allow-origin": "*",
     "access-control-allow-methods": "GET,POST,OPTIONS",
-    "access-control-allow-headers": "content-type,x-user-id"
+    "access-control-allow-headers": "content-type,x-user-id,x-hub-signature-256"
   });
   res.end(JSON.stringify(payload));
+}
+
+function text(res, status, payload) {
+  res.writeHead(status, {
+    "content-type": "text/plain",
+    "access-control-allow-origin": "*",
+    "access-control-allow-methods": "GET,POST,OPTIONS",
+    "access-control-allow-headers": "content-type,x-user-id,x-hub-signature-256"
+  });
+  res.end(String(payload));
+}
+
+function parseMultipartUpload(rawBody, contentType) {
+  const boundaryMatch = contentType.match(/boundary=(?:"([^"]+)"|([^;]+))/i);
+  if (!boundaryMatch) throw new Error("Multipart boundary is missing.");
+  const boundary = `--${boundaryMatch[1] || boundaryMatch[2]}`;
+  const parts = rawBody.toString("binary").split(boundary).slice(1, -1);
+  const fields = {};
+  let file = null;
+
+  for (const part of parts) {
+    const trimmed = part.replace(/^\r\n/, "").replace(/\r\n$/, "");
+    const splitIndex = trimmed.indexOf("\r\n\r\n");
+    if (splitIndex < 0) continue;
+    const rawHeaders = trimmed.slice(0, splitIndex);
+    let body = trimmed.slice(splitIndex + 4);
+    if (body.endsWith("\r\n")) body = body.slice(0, -2);
+    const headers = Object.fromEntries(rawHeaders.split("\r\n").map((line) => {
+      const index = line.indexOf(":");
+      return index >= 0 ? [line.slice(0, index).toLowerCase(), line.slice(index + 1).trim()] : [line.toLowerCase(), ""];
+    }));
+    const disposition = headers["content-disposition"] || "";
+    const name = disposition.match(/name="([^"]+)"/)?.[1];
+    const filename = disposition.match(/filename="([^"]*)"/)?.[1];
+    if (!name) continue;
+
+    if (filename) {
+      file = {
+        fieldName: name,
+        filename,
+        contentType: headers["content-type"] || "application/octet-stream",
+        buffer: Buffer.from(body, "binary")
+      };
+    } else {
+      fields[name] = Buffer.from(body, "binary").toString("utf8");
+    }
+  }
+
+  return { fields, file };
 }
 
 async function serveStatic(res, pathname) {
