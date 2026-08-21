@@ -4,9 +4,15 @@ import path from "node:path";
 
 const databasePath = path.join(os.tmpdir(), `lead-comment-search-${Date.now()}.sqlite`);
 const port = 47000 + Math.floor(Math.random() * 1000);
+const adminEmail = "comment-search-admin@example.com";
+const adminPassword = "CommentSearchQa123!";
 process.env.DATABASE_URL = "";
 process.env.DATABASE_PATH = databasePath;
 process.env.PORT = String(port);
+process.env.INITIAL_ADMIN_NAME = "Comment Search QA Admin";
+process.env.INITIAL_ADMIN_EMAIL = adminEmail;
+process.env.INITIAL_ADMIN_PASSWORD = adminPassword;
+process.env.COOKIE_SECURE = "false";
 
 let exitCode = 0;
 let testServer;
@@ -39,7 +45,19 @@ try {
 
   const serverModule = await import("../server/server.js");
   testServer = serverModule.server;
-  const response = await fetch(`http://localhost:${port}/api/leads?search=8k`);
+  const loginResponse = await fetch(`http://localhost:${port}/api/auth/login`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ identifier: adminEmail, password: adminPassword })
+  });
+  if (!loginResponse.ok) {
+    throw new Error(`Comment search login failed: ${await loginResponse.text()}`);
+  }
+
+  const cookie = (loginResponse.headers.get("set-cookie") || "").split(";")[0];
+  const response = await fetch(`http://localhost:${port}/api/leads?search=8k`, {
+    headers: { cookie }
+  });
   const results = await response.json();
 
   if (!response.ok || results.length !== 1 || !results[0].matched_comment?.includes("8k budget")) {
@@ -60,4 +78,4 @@ try {
   await fs.rm(databasePath, { force: true });
 }
 
-process.exit(exitCode);
+process.exitCode = exitCode;
