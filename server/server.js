@@ -8,11 +8,13 @@ import {
   REJECTION_REASONS,
   addActivity,
   all,
+  createManualLead,
   dateOnly,
   get,
   initDb,
   isoNow,
   monthStart,
+  normalizePhone,
   run,
   sevenDaysAgo,
   tomorrowDate,
@@ -158,6 +160,21 @@ export const server = http.createServer(async (req, res) => {
       return json(res, 200, await listLeads(Object.fromEntries(url.searchParams.entries()), user));
     }
 
+    if (req.method === "POST" && url.pathname === "/api/leads") {
+      const body = await readJson(req);
+      const result = await createManualLeadRequest(body, user);
+      if (result.duplicate) {
+        const canOpen = canManageLeads(user) || Number(result.existingLead.assigned_to) === Number(user.id);
+        return json(res, 409, {
+          error: canOpen
+            ? "A lead with this phone number already exists."
+            : "A lead with this phone number already exists. Ask a manager to review it.",
+          ...(canOpen ? { existingLeadId: Number(result.existingLead.id) } : {})
+        });
+      }
+      return json(res, 201, { lead: await leadById(result.leadId) });
+    }
+
     const leadMatch = url.pathname.match(/^\/api\/leads\/(\d+)$/);
     if (req.method === "GET" && leadMatch) {
       const id = Number(leadMatch[1]);
@@ -258,6 +275,56 @@ async function createUser(body) {
     { name, email, passwordHash: credentials.hash, passwordSalt: credentials.salt, role, active }
   );
   return publicUser(await get("SELECT id, name, email, role, active FROM users WHERE LOWER(email) = :email", { email }));
+}
+
+async function createManualLeadRequest(body, user) {
+  const name = requiredText(body.name, "Name", 120);
+  const normalizedPhone = normalizePhone(requiredText(body.phone, "Phone", 30));
+  if (normalizedPhone.length < 10 || normalizedPhone.length > 15) {
+    throw new HttpError(400, "Enter a valid phone number with 10 to 15 digits.");
+  }
+
+  const email = optionalText(body.email, "Email", 254).toLowerCase();
+  if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    throw new HttpError(400, "Enter a valid email address.");
+  }
+
+  let assignedTo = Number(user.id);
+  if (canManageLeads(user) && Object.hasOwn(body, "assignedTo")) {
+    if (body.assignedTo === null || body.assignedTo === "") {
+      assignedTo = null;
+    } else {
+      assignedTo = Number(body.assignedTo);
+      if (!Number.isInteger(assignedTo) || assignedTo <= 0) {
+        throw new HttpError(400, "Select a valid assignee.");
+      }
+      const assignee = await get("SELECT id FROM users WHERE id = :id AND active", { id: assignedTo });
+      if (!assignee) throw new HttpError(400, "Assigned user is not active or does not exist.");
+    }
+  }
+
+  return createManualLead({
+    name,
+    phone: `+${normalizedPhone}`,
+    email: email || null,
+    lookingFor: optionalText(body.lookingFor, "Budget / Looking For", 200),
+    buyPlan: optionalText(body.buyPlan, "Buy Plan", 120),
+    comment: optionalText(body.comment, "Initial Comment", 2000),
+    assignedTo
+  }, user.id);
+}
+
+function requiredText(value, label, maxLength) {
+  const text = String(value || "").trim();
+  if (!text) throw new HttpError(400, `${label} is required.`);
+  if (text.length > maxLength) throw new HttpError(400, `${label} must be ${maxLength} characters or fewer.`);
+  return text;
+}
+
+function optionalText(value, label, maxLength) {
+  const text = String(value || "").trim();
+  if (text.length > maxLength) throw new HttpError(400, `${label} must be ${maxLength} characters or fewer.`);
+  return text;
 }
 
 async function updateUser(id, body, actor) {

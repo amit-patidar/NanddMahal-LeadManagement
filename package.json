@@ -13,6 +13,7 @@
     "start": "node --experimental-sqlite server/server.js",
     "build": "vite build",
     "render-build": "npm install && npm run build",
+    "verify:manual-leads": "node --experimental-sqlite tools/verify-manual-lead-entry.js",
     "export:data": "node --experimental-sqlite --import dotenv/config scripts/export-data.js",
     "import:data": "node --experimental-sqlite --import dotenv/config scripts/import-data.js",
     "preview": "vite preview --host 0.0.0.0"

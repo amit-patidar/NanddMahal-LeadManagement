@@ -116,12 +116,27 @@ nav button:hover {
   max-width: none;
 }
 
-.global-search {
+.global-toolbar {
   position: sticky;
   top: 0;
   z-index: 10;
-  width: min(680px, 100%);
   margin-bottom: 16px;
+  display: grid;
+  grid-template-columns: minmax(0, 680px) auto;
+  gap: 10px;
+  align-items: center;
+  width: 100%;
+}
+
+.global-search {
+  position: relative;
+  width: 100%;
+  min-width: 0;
+}
+
+.add-lead-button {
+  justify-self: start;
+  white-space: nowrap;
 }
 
 .global-search-box {
@@ -943,6 +958,61 @@ blockquote {
   gap: 10px;
 }
 
+.add-lead-modal {
+  width: min(720px, 100%);
+  max-height: calc(100vh - 36px);
+  overflow-y: auto;
+}
+
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: start;
+}
+
+.modal-header h2,
+.modal-header p {
+  margin-bottom: 0;
+}
+
+.add-lead-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.add-lead-grid label {
+  min-width: 0;
+  display: grid;
+  gap: 5px;
+  color: #475467;
+  font-size: 13px;
+}
+
+.add-lead-grid input,
+.add-lead-grid select,
+.add-lead-grid textarea {
+  width: 100%;
+  min-width: 0;
+}
+
+.add-lead-comment {
+  grid-column: 1 / -1;
+}
+
+.form-error {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: center;
+  padding: 10px;
+  border: 1px solid #f0b5b5;
+  border-radius: 8px;
+  background: #fff0f0;
+  color: #a11616;
+}
+
 .modal textarea {
   min-height: 92px;
   resize: vertical;
@@ -1011,8 +1081,22 @@ blockquote {
     padding: 14px;
   }
 
-  .global-search {
+  .global-toolbar {
     position: relative;
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .add-lead-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .add-lead-comment {
+    grid-column: auto;
+  }
+
+  .form-error {
+    align-items: stretch;
+    flex-direction: column;
   }
 
   .dashboard-grid,
@@ -1070,5 +1154,11 @@ blockquote {
   .search-box input,
   .filters select {
     width: 100%;
+  }
+}
+
+@media (max-width: 400px) {
+  .add-lead-button span {
+    display: none;
   }
 }

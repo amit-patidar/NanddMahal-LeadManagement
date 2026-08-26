@@ -7,6 +7,7 @@ import {
   ClipboardList,
   LayoutDashboard,
   PhoneCall,
+  Plus,
   RefreshCw,
   Search,
   Siren,
@@ -36,10 +37,12 @@ function App() {
   const [allLeadFilters, setAllLeadFilters] = useState({ search: "", status: "", assignedTo: "", preset: "", dateField: "created" });
   const [selectedLeadId, setSelectedLeadId] = useState(null);
   const [whatsappLeadId, setWhatsappLeadId] = useState(null);
+  const [addLeadOpen, setAddLeadOpen] = useState(false);
 
   function navigate(nextPage) {
     setSelectedLeadId(null);
     setWhatsappLeadId(null);
+    setAddLeadOpen(false);
     setPage(nextPage);
   }
 
@@ -100,6 +103,7 @@ function App() {
           <button className="icon-button" title="Logout" onClick={() => request("/auth/logout", { method: "POST" }).catch(() => {}).finally(() => {
             setSelectedLeadId(null);
             setWhatsappLeadId(null);
+            setAddLeadOpen(false);
             setPage("dashboard");
             setUser(null);
           })}>x</button>
@@ -107,7 +111,18 @@ function App() {
       </aside>
 
       <main className="main">
-        <GlobalSearch openLead={openLead} />
+        <div className="global-toolbar">
+          <GlobalSearch openLead={openLead} />
+          <button
+            className="primary add-lead-button"
+            type="button"
+            title="Add lead"
+            aria-label="Add lead"
+            onClick={() => setAddLeadOpen(true)}
+          >
+            <Plus size={17} /> <span>Add Lead</span>
+          </button>
+        </div>
         {selectedLeadId ? (
           <LeadDetail id={selectedLeadId} user={user} users={users} openWhatsApp={openWhatsApp} onBack={() => {
             setWhatsappLeadId(null);
@@ -130,6 +145,21 @@ function App() {
         )}
       </main>
       {whatsappLeadId && <WhatsAppDrawer key={whatsappLeadId} id={whatsappLeadId} user={user} onClose={() => setWhatsappLeadId(null)} />}
+      {addLeadOpen && (
+        <AddLeadDialog
+          user={user}
+          users={users}
+          onClose={() => setAddLeadOpen(false)}
+          onCreated={(lead) => {
+            setAddLeadOpen(false);
+            openLead(lead.id);
+          }}
+          onOpenExisting={(id) => {
+            setAddLeadOpen(false);
+            openLead(id);
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -246,6 +276,134 @@ function Login({ onLogin }) {
         <input type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} required />
         {error && <p className="error">{error}</p>}
         <button className="primary" type="submit">Login</button>
+      </form>
+    </div>
+  );
+}
+
+function AddLeadDialog({ user, users, onClose, onCreated, onOpenExisting }) {
+  const dialogRef = useRef(null);
+  const [form, setForm] = useState({
+    name: "",
+    phone: "",
+    email: "",
+    lookingFor: "",
+    buyPlan: "",
+    comment: "",
+    assignedTo: String(user.id)
+  });
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const [existingLeadId, setExistingLeadId] = useState(null);
+  const activeUsers = users.filter((member) => member.active);
+  const assignableUsers = canManageLeads(user) && !activeUsers.some((member) => Number(member.id) === Number(user.id))
+    ? [{ ...user, active: true }, ...activeUsers]
+    : activeUsers;
+
+  useEffect(() => {
+    function handleDialogKey(event) {
+      if (event.key === "Escape" && !saving) {
+        onClose();
+        return;
+      }
+      if (event.key !== "Tab") return;
+      const focusable = [...dialogRef.current.querySelectorAll("button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled)")];
+      if (!focusable.length) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    }
+    document.addEventListener("keydown", handleDialogKey);
+    return () => document.removeEventListener("keydown", handleDialogKey);
+  }, [onClose, saving]);
+
+  function update(field, value) {
+    setForm((current) => ({ ...current, [field]: value }));
+    setError("");
+    setExistingLeadId(null);
+  }
+
+  async function submit(event) {
+    event.preventDefault();
+    if (saving) return;
+    setSaving(true);
+    setError("");
+    setExistingLeadId(null);
+    try {
+      const result = await request("/leads", {
+        method: "POST",
+        body: {
+          ...form,
+          ...(canManageLeads(user) ? { assignedTo: form.assignedTo || null } : {})
+        }
+      });
+      onCreated(result.lead);
+    } catch (err) {
+      setError(err.message);
+      setExistingLeadId(err.data?.existingLeadId || null);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="modal-backdrop">
+      <form ref={dialogRef} className="modal add-lead-modal" role="dialog" aria-modal="true" aria-labelledby="add-lead-title" onSubmit={submit}>
+        <div className="modal-header">
+          <div>
+            <h2 id="add-lead-title">Add Lead</h2>
+            <p className="muted">New lead</p>
+          </div>
+          <button className="icon-button" type="button" title="Close" aria-label="Close add lead" onClick={onClose} disabled={saving}>
+            <X size={18} />
+          </button>
+        </div>
+        <div className="add-lead-grid">
+          <label>Name
+            <input name="name" autoFocus required maxLength={120} value={form.name} onChange={(e) => update("name", e.target.value)} />
+          </label>
+          <label>Phone
+            <input name="phone" type="tel" required maxLength={30} placeholder="e.g. 9876543210" value={form.phone} onChange={(e) => update("phone", e.target.value)} />
+          </label>
+          <label>Email
+            <input name="email" type="email" maxLength={254} value={form.email} onChange={(e) => update("email", e.target.value)} />
+          </label>
+          <label>Budget / Looking For
+            <input name="lookingFor" maxLength={200} value={form.lookingFor} onChange={(e) => update("lookingFor", e.target.value)} />
+          </label>
+          <label>Buy Plan
+            <input name="buyPlan" maxLength={120} value={form.buyPlan} onChange={(e) => update("buyPlan", e.target.value)} />
+          </label>
+          {canManageLeads(user) && <label>Assigned To
+            <select name="assignedTo" value={form.assignedTo} onChange={(e) => update("assignedTo", e.target.value)}>
+              <option value="">Unassigned</option>
+              {assignableUsers.map((member) => (
+                <option key={member.id} value={member.id}>{member.name}</option>
+              ))}
+            </select>
+          </label>}
+          <label className="add-lead-comment">Initial Comment
+            <textarea name="comment" maxLength={2000} value={form.comment} onChange={(e) => update("comment", e.target.value)} />
+          </label>
+        </div>
+        {error && (
+          <div className="form-error" role="alert">
+            <span>{error}</span>
+            {existingLeadId && (
+              <button className="secondary" type="button" onClick={() => onOpenExisting(existingLeadId)}>Open Lead</button>
+            )}
+          </div>
+        )}
+        <div className="modal-actions">
+          <button className="secondary" type="button" onClick={onClose} disabled={saving}>Cancel</button>
+          <button className="primary" type="submit" disabled={saving}>{saving ? "Creating" : "Create Lead"}</button>
+        </div>
       </form>
     </div>
   );
@@ -1304,7 +1462,12 @@ async function request(path, options = {}) {
     body: options.body ? JSON.stringify(options.body) : undefined
   });
   const data = await response.json();
-  if (!response.ok) throw new Error(data.error || "Request failed");
+  if (!response.ok) {
+    const error = new Error(data.error || "Request failed");
+    error.status = response.status;
+    error.data = data;
+    throw error;
+  }
   return data;
 }
 

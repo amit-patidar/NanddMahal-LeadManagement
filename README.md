@@ -191,6 +191,7 @@ Included:
 - Follow-up and site visit scheduling
 - Dynamic missed lead calculations
 - Lead detail with permanent activity timeline
+- Direct manual lead entry for side leads, with role-safe assignment and duplicate-phone protection
 - WhatsApp webhook foundation, template send, and 24-hour direct replies on feature branch
 - SQLite for local development and PostgreSQL for Render deployment
 
