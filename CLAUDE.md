@@ -24,7 +24,7 @@ Current stack:
 - Cloudinary media storage in `server/cloudinaryMedia.js`.
 - Authentication uses salted `crypto.scrypt` password hashes, a server-side `sessions` table, and an HTTP-only session cookie. Admins manage users; admins and managers manage lead assignments; sales users are server-scoped to assigned leads.
 
-The active development branch is `feature/whatsapp-automation`. The GitHub repository and deployment instructions are in `README.md`; secret values belong only in local or Render environment variables.
+The active development branch is `feature/manual-lead-entry`. The GitHub repository and deployment instructions are in `README.md`; secret values belong only in local or Render environment variables.
 
 ## Working rules
 
@@ -44,6 +44,7 @@ The active development branch is `feature/whatsapp-automation`. The GitHub repos
 - Sync is currently manual through `POST /api/sync`; `SYNC_INTERVAL_MINUTES` is documented but not used by the server.
 - Existing CRM status, comments, follow-up data, site-visit data, and rejection data must not be overwritten by normal sync.
 - Historical comment imports and sheet-to-status moves were one-time migrations, not recurring sync behavior.
+- Authenticated teammates can add manual side leads directly. Manual leads use server-generated `manual:<uuid>` source IDs and are not overwritten or deleted by Google Sheet sync.
 - Known CRM statuses are `New`, `Attempted`, `Connected`, `Follow Up`, `Site Visit`, `Super Interested`, `Closed`, and `Rejected`.
 - Rejected leads have their own page and are excluded from dashboard counts.
 
@@ -54,6 +55,7 @@ The active development branch is `feature/whatsapp-automation`. The GitHub repos
 - WhatsApp supports approved template sends, image headers, Cloudinary media reuse, inbound webhooks, delivery/failure logs, and direct replies only within the 24-hour customer-service window.
 - Fully automatic outbound messaging remains disabled until consent, opt-out, template approval, and retry policy are finalized.
 - User access rules: admins and managers can view and assign all leads; sales users can only view or update leads assigned to their authenticated account. Sales users cannot assign leads to themselves or others. Never reintroduce client-trusted user IDs for authorization.
+- Manual lead access rules: admins and managers may choose an active assignee or leave a new lead unassigned; sales-created leads are always assigned to the authenticated sales user by the server.
 
 ## Fact ownership
 

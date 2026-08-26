@@ -1,4 +1,5 @@
 import { DatabaseSync } from "node:sqlite";
+import { randomUUID } from "node:crypto";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import pg from "pg";
@@ -580,9 +581,121 @@ export async function recordWhatsAppMessage(message) {
 export function normalizePhone(phone) {
   const digits = String(phone || "").replace(/\D/g, "");
   if (!digits) return "";
+  if (digits.length > 10 && digits.startsWith("0")) return normalizePhone(digits.slice(1));
   if (digits.length === 10) return `91${digits}`;
-  if (digits.length > 10 && digits.startsWith("0")) return digits.slice(1);
   return digits;
+}
+
+export async function createManualLead(source, userId = null) {
+  const now = nowIso();
+  const info = {
+    metaLeadId: `manual:${randomUUID()}`,
+    createdAt: now,
+    metaCreatedAt: now,
+    name: source.name,
+    phone: source.phone,
+    email: source.email || null,
+    campaign: "Manual Entry",
+    lookingFor: source.lookingFor || null,
+    buyPlan: source.buyPlan || null,
+    assignedTo: source.assignedTo || null,
+    lastComment: source.comment || null,
+    normalizedPhone: normalizePhone(source.phone)
+  };
+  const insertLeadSql = `INSERT INTO leads
+      (meta_lead_id, created_at, meta_created_at, name, phone, email, campaign, looking_for, buy_plan, status, assigned_to, last_activity_at, last_comment)
+     VALUES
+      (:metaLeadId, :createdAt, :metaCreatedAt, :name, :phone, :email, :campaign, :lookingFor, :buyPlan, 'New', :assignedTo, :createdAt, :lastComment)`;
+
+  if (isPostgres) {
+    const client = await db.connect();
+    try {
+      await client.query("BEGIN");
+      await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", [info.normalizedPhone]);
+      const existingRows = (await client.query("SELECT id, assigned_to, phone FROM leads WHERE phone IS NOT NULL")).rows;
+      const duplicate = findNormalizedPhone(existingRows, info.normalizedPhone);
+      if (duplicate) {
+        await client.query("ROLLBACK");
+        return { duplicate: true, existingLead: duplicate };
+      }
+
+      const insertQuery = toPostgresQuery(`${insertLeadSql} RETURNING id`, info);
+      const inserted = await client.query(insertQuery.text, insertQuery.values);
+      const leadId = Number(inserted.rows[0].id);
+      for (const activity of manualLeadActivities(leadId, userId, info)) {
+        const activityQuery = toPostgresQuery(MANUAL_ACTIVITY_SQL, activity);
+        await client.query(activityQuery.text, activityQuery.values);
+      }
+      await client.query("COMMIT");
+      return { duplicate: false, leadId };
+    } catch (error) {
+      try {
+        await client.query("ROLLBACK");
+      } catch {
+        // Preserve the original database error.
+      }
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  db.exec("BEGIN IMMEDIATE");
+  try {
+    const existingRows = await all("SELECT id, assigned_to, phone FROM leads WHERE phone IS NOT NULL");
+    const duplicate = findNormalizedPhone(existingRows, info.normalizedPhone);
+    if (duplicate) {
+      db.exec("ROLLBACK");
+      return { duplicate: true, existingLead: duplicate };
+    }
+
+    const inserted = await run(insertLeadSql, info);
+    const leadId = Number(inserted.lastInsertRowid);
+    for (const activity of manualLeadActivities(leadId, userId, info)) {
+      await run(MANUAL_ACTIVITY_SQL, activity);
+    }
+    db.exec("COMMIT");
+    return { duplicate: false, leadId };
+  } catch (error) {
+    try {
+      db.exec("ROLLBACK");
+    } catch {
+      // Preserve the original database error.
+    }
+    throw error;
+  }
+}
+
+const MANUAL_ACTIVITY_SQL = `INSERT INTO lead_activities
+    (lead_id, user_id, activity_type, old_value, new_value, comment, created_at)
+   VALUES (:leadId, :userId, :activityType, :oldValue, :newValue, :comment, :createdAt)`;
+
+function manualLeadActivities(leadId, userId, info) {
+  const activities = [{
+    leadId,
+    userId,
+    activityType: "Lead Created",
+    oldValue: null,
+    newValue: "New",
+    comment: "Added manually",
+    createdAt: info.createdAt
+  }];
+  if (info.lastComment) {
+    activities.push({
+      leadId,
+      userId,
+      activityType: "Comment Added",
+      oldValue: null,
+      newValue: null,
+      comment: info.lastComment,
+      createdAt: info.createdAt
+    });
+  }
+  return activities;
+}
+
+function findNormalizedPhone(rows, normalizedPhone) {
+  return rows.find((lead) => normalizePhone(lead.phone) === normalizedPhone) || null;
 }
 
 export async function createLeadFromSource(source, userId = null) {
