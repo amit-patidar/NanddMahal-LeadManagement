@@ -113,6 +113,7 @@ nav button:hover {
 .main {
   padding: max(18px, env(safe-area-inset-top)) max(18px, env(safe-area-inset-right)) max(28px, env(safe-area-inset-bottom)) max(18px, env(safe-area-inset-left));
   width: 100%;
+  min-width: 0;
   max-width: none;
 }
 
@@ -276,6 +277,129 @@ h2 {
   justify-content: space-between;
   gap: 16px;
   align-items: center;
+}
+
+.sync-issues {
+  padding: 10px 0;
+  overflow-wrap: anywhere;
+}
+
+.sync-issues summary { cursor: pointer; }
+
+.column-mapping {
+  padding: 10px 0;
+  border-bottom: 1px solid #dde3ea;
+  min-width: 0;
+}
+
+.mapping-disclosure {
+  border: 0;
+  padding-left: 0;
+}
+
+.mapping-source {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 8px 0 12px;
+}
+
+.mapping-source div,
+.mapping-choice,
+.mapping-samples {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.mapping-column-headings,
+.mapping-row {
+  display: grid;
+  grid-template-columns: minmax(100px, 1fr) minmax(0, 2fr) minmax(0, 1.5fr);
+  gap: 12px;
+  align-items: start;
+  padding: 10px 0;
+  border-bottom: 1px solid #e5e7eb;
+  font-size: 13px;
+}
+
+.mapping-row label {
+  overflow-wrap: anywhere;
+  padding-top: 9px;
+}
+
+.mapping-column-headings,
+.mapping-required,
+.mapping-choice small {
+  color: #59636c;
+  font-size: 12px;
+}
+
+.mapping-choice select {
+  width: 100%;
+  min-width: 0;
+  min-height: 38px;
+  padding: 8px;
+  border: 1px solid #cfd6df;
+  border-radius: 6px;
+  background: #fff;
+  text-overflow: ellipsis;
+}
+
+.mapping-choice select[aria-invalid="true"] {
+  border-color: #a11616;
+}
+
+.mapping-samples span + span {
+  border-top: 1px dotted #dde3ea;
+  padding-top: 4px;
+}
+
+.column-mapping .mapping-error {
+  color: #a11616;
+  overflow-wrap: anywhere;
+}
+
+.mapping-warning {
+  color: #785600;
+  overflow-wrap: anywhere;
+}
+
+.mapping-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.sync-settings button:disabled,
+.sync-settings select:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.sync-settings button svg {
+  flex-shrink: 0;
+}
+
+.sync-settings :focus-visible {
+  outline: 2px solid #8d1f2d;
+  outline-offset: 3px;
+}
+
+.mapping-notice {
+  font-size: 13px;
+  margin-bottom: 0;
+}
+
+@media (max-width: 600px) {
+  .mapping-column-headings { display: none; }
+  .mapping-row { grid-template-columns: minmax(0, 1fr); gap: 6px; }
+  .mapping-row label { padding-top: 0; }
+  .mapping-samples::before { content: "Sample"; color: #59636c; font-size: 12px; }
+  .mapping-actions button { max-width: 100%; white-space: normal; text-align: left; }
 }
 
 .user-create-form {
@@ -444,6 +568,30 @@ a {
 .lead-col-rejection {
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.column-filter {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.column-filter select {
+  width: 100%;
+  min-width: 0;
+  min-height: 30px;
+  border: 1px solid #cfd6df;
+  border-radius: 6px;
+  padding: 4px 22px 4px 6px;
+  background: #fff;
+  color: #26323f;
+  font: inherit;
+  text-transform: none;
+}
+
+.column-filter select:focus-visible {
+  outline: 2px solid #8d1f2d;
+  outline-offset: 2px;
 }
 
 .inline-assignment {

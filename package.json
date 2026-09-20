@@ -14,6 +14,8 @@
     "build": "vite build",
     "render-build": "npm install && npm run build",
     "verify:manual-leads": "node --experimental-sqlite tools/verify-manual-lead-entry.js",
+    "verify:sheet-mapping": "node --experimental-sqlite tools/verify-sheet-mapping.js",
+    "verify:lead-column-filters": "node tools/verify-lead-column-filters-ui.js",
     "export:data": "node --experimental-sqlite --import dotenv/config scripts/export-data.js",
     "import:data": "node --experimental-sqlite --import dotenv/config scripts/import-data.js",
     "preview": "vite preview --host 0.0.0.0"

@@ -30,7 +30,7 @@ import {
   setSessionCookie
 } from "./auth.js";
 import { hashPassword } from "./passwords.js";
-import { syncGoogleSheet } from "./sheetsSync.js";
+import { syncGoogleSheet, getGoogleSheetMapping, previewGoogleSheetMapping, saveGoogleSheetMapping } from "./sheetsSync.js";
 import { cloudinaryStatus, listWhatsAppMedia, uploadWhatsAppMedia } from "./cloudinaryMedia.js";
 import { verifyMetaChallenge, verifyMetaSignature } from "./whatsappProvider.js";
 import { parseMetaWebhook } from "./whatsappWebhook.js";
@@ -237,6 +237,19 @@ export const server = http.createServer(async (req, res) => {
       return json(res, 200, await updateLead(id, body, user));
     }
 
+    if (url.pathname === "/api/sync/mapping" || url.pathname === "/api/sync/mapping/preview") {
+      requireAdmin(user);
+      if (req.method === "GET" && url.pathname === "/api/sync/mapping") {
+        return json(res, 200, await getGoogleSheetMapping());
+      }
+      if (req.method === "PUT" && url.pathname === "/api/sync/mapping") {
+        return json(res, 200, await saveGoogleSheetMapping(await readJson(req), user.id));
+      }
+      if (req.method === "POST" && url.pathname === "/api/sync/mapping/preview") {
+        return json(res, 200, await previewGoogleSheetMapping(await readJson(req)));
+      }
+    }
+
     if (req.method === "POST" && url.pathname === "/api/sync") {
       requireAdmin(user);
       const result = await syncGoogleSheet(user.id);
@@ -245,8 +258,8 @@ export const server = http.createServer(async (req, res) => {
 
     return json(res, 404, { error: "Not found" });
   } catch (error) {
-    if (!(error instanceof HttpError && error.status < 500)) console.error(error);
-    return json(res, error.status || 500, { error: error.message || "Server error" });
+    if (!error.status || error.status >= 500) console.error(error);
+    return json(res, error.status || 500, { ...error.mappingResponse, error: error.message || "Server error" });
   }
 });
 
@@ -688,7 +701,7 @@ function json(res, status, payload) {
   res.writeHead(status, {
     "content-type": "application/json",
     "access-control-allow-origin": "*",
-    "access-control-allow-methods": "GET,POST,OPTIONS",
+    "access-control-allow-methods": "GET,POST,PUT,OPTIONS",
     "access-control-allow-headers": "content-type,x-user-id,x-hub-signature-256"
   });
   res.end(JSON.stringify(payload));
@@ -698,7 +711,7 @@ function text(res, status, payload) {
   res.writeHead(status, {
     "content-type": "text/plain",
     "access-control-allow-origin": "*",
-    "access-control-allow-methods": "GET,POST,OPTIONS",
+    "access-control-allow-methods": "GET,POST,PUT,OPTIONS",
     "access-control-allow-headers": "content-type,x-user-id,x-hub-signature-256"
   });
   res.end(String(payload));

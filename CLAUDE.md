@@ -24,7 +24,7 @@ Current stack:
 - Cloudinary media storage in `server/cloudinaryMedia.js`.
 - Authentication uses salted `crypto.scrypt` password hashes, a server-side `sessions` table, and an HTTP-only session cookie. Admins manage users; admins and managers manage lead assignments; sales users are server-scoped to assigned leads.
 
-The active development branch is `feature/manual-lead-entry`. The GitHub repository and deployment instructions are in `README.md`; secret values belong only in local or Render environment variables.
+The active development branch is `feature/sheet-column-mapping`. The GitHub repository and deployment instructions are in `README.md`; secret values belong only in local or Render environment variables.
 
 ## Working rules
 
@@ -42,6 +42,7 @@ The active development branch is `feature/manual-lead-entry`. The GitHub reposit
 
 - The primary lead import is the `Nandd Mahal Leads` Google Sheet tab.
 - Sync is currently manual through `POST /api/sync`; `SYNC_INTERVAL_MINUTES` is documented but not used by the server.
+- Admins configure optional saved source-column mappings below Sync Leads. Mappings are database settings per spreadsheet/numeric tab ID; source selection and Google credentials remain environment-configured. Keep normal sync separate from mapping preview/save, and preserve global stable lead IDs and CRM-managed data.
 - Existing CRM status, comments, follow-up data, site-visit data, and rejection data must not be overwritten by normal sync.
 - Historical comment imports and sheet-to-status moves were one-time migrations, not recurring sync behavior.
 - Authenticated teammates can add manual side leads directly. Manual leads use server-generated `manual:<uuid>` source IDs and are not overwritten or deleted by Google Sheet sync.
@@ -51,6 +52,7 @@ The active development branch is `feature/manual-lead-entry`. The GitHub reposit
 ## Current UI and integration rules
 
 - Lead list pages use the shared full-width table with fixed headings and continuous row separators.
+- Every lead table exposes separate Looking For and Buy Plan dropdowns inside those column headers. Options are the unique nonblank values in the currently loaded view; both filters may be combined.
 - Global lead search covers name, phone, email, Meta lead ID, and current or historical CRM comments.
 - WhatsApp supports approved template sends, image headers, Cloudinary media reuse, inbound webhooks, delivery/failure logs, and direct replies only within the 24-hour customer-service window.
 - Fully automatic outbound messaging remains disabled until consent, opt-out, template approval, and retry policy are finalized.

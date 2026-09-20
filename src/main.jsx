@@ -18,6 +18,7 @@ import {
   XCircle
 } from "lucide-react";
 import "./styles.css";
+import SyncPanel from "./SyncPanel.jsx";
 
 const API = "/api";
 const statusOptions = ["New", "Attempted", "Connected", "Follow Up", "Site Visit", "Super Interested", "Closed", "Rejected"];
@@ -410,12 +411,12 @@ function AddLeadDialog({ user, users, onClose, onCreated, onOpenExisting }) {
 }
 
 function Page({ page, user, users, onUsersChanged, openLead, openWhatsApp, setPage, missedTab, setMissedTab, allLeadFilters, setAllLeadFilters }) {
-  if (page === "dashboard") return <Dashboard setPage={setPage} setMissedTab={setMissedTab} />;
+  if (page === "dashboard") return <Dashboard user={user} setPage={setPage} setMissedTab={setMissedTab} />;
   if (page === "missed") return <Missed user={user} users={users} openLead={openLead} openWhatsApp={openWhatsApp} tab={missedTab} setTab={setMissedTab} />;
   if (page === "all") return <AllLeads user={user} users={users} openLead={openLead} openWhatsApp={openWhatsApp} filters={allLeadFilters} setFilters={setAllLeadFilters} />;
   if (page === "users") return user.role === "admin"
     ? <UserManagement users={users} onUsersChanged={onUsersChanged} />
-    : <Dashboard setPage={setPage} setMissedTab={setMissedTab} />;
+    : <Dashboard user={user} setPage={setPage} setMissedTab={setMissedTab} />;
 
   const configs = {
     new: { title: "New Leads", list: "new", quick: ["assignLead", "callUpdate"] },
@@ -433,7 +434,7 @@ function Page({ page, user, users, onUsersChanged, openLead, openWhatsApp, setPa
   return <LeadList config={configs[page]} user={user} users={users} openLead={openLead} openWhatsApp={openWhatsApp} />;
 }
 
-function Dashboard({ setPage, setMissedTab }) {
+function Dashboard({ user, setPage, setMissedTab }) {
   const [data, setData] = useState(null);
   const cards = [
     ["New Leads", "newLeads", "new", <PhoneCall />],
@@ -465,38 +466,8 @@ function Dashboard({ setPage, setMissedTab }) {
           </button>
         ))}
       </div>
-      <SyncPanel />
+      {user?.role === "admin" && <SyncPanel request={request} />}
     </section>
-  );
-}
-
-function SyncPanel() {
-  const [syncing, setSyncing] = useState(false);
-  const [message, setMessage] = useState("");
-
-  async function sync() {
-    setSyncing(true);
-    setMessage("");
-    try {
-      const result = await request("/sync", { method: "POST", body: {} });
-      setMessage(result.message);
-    } catch (err) {
-      setMessage(err.message);
-    } finally {
-      setSyncing(false);
-    }
-  }
-
-  return (
-    <div className="sync-strip">
-      <div>
-        <strong>Google Sheet Sync</strong>
-        <small>{message || "Manual import is ready. Add Google credentials when you want live sheet sync."}</small>
-      </div>
-      <button className="secondary" onClick={sync} disabled={syncing}>
-        <RefreshCw size={16} /> {syncing ? "Syncing" : "Sync Leads"}
-      </button>
-    </div>
   );
 }
 
@@ -665,6 +636,7 @@ function LeadList({ config, user, users, openLead, openWhatsApp, embedded = fals
   const [leads, setLeads] = useState([]);
   const [loading, setLoading] = useState(true);
   const [dateFilter, setDateFilter] = useState("today");
+  const [columnFilters, setColumnFilters] = useState({ lookingFor: "", buyPlan: "" });
   const [dialog, setDialog] = useState(null);
   const [assignmentLead, setAssignmentLead] = useState(null);
 
@@ -689,6 +661,10 @@ function LeadList({ config, user, users, openLead, openWhatsApp, embedded = fals
     load();
   }, [endpoint]);
 
+  useEffect(() => {
+    setColumnFilters({ lookingFor: "", buyPlan: "" });
+  }, [endpoint]);
+
   async function quick(lead, action) {
     if (action === "assignLead") return setAssignmentLead(lead);
     if (action === "siteVisited") return mutate(lead.id, { action: "siteVisited" });
@@ -711,6 +687,34 @@ function LeadList({ config, user, users, openLead, openWhatsApp, embedded = fals
     ];
   }, [config.extraColumns]);
 
+  const columnFilterOptions = useMemo(() => ({
+    lookingFor: uniqueLeadValues(leads, "looking_for"),
+    buyPlan: uniqueLeadValues(leads, "buy_plan")
+  }), [leads]);
+
+  const visibleLeads = useMemo(() => leads.filter((lead) => (
+    (!columnFilters.lookingFor || lead.looking_for === columnFilters.lookingFor)
+    && (!columnFilters.buyPlan || lead.buy_plan === columnFilters.buyPlan)
+  )), [leads, columnFilters]);
+
+  function renderColumnHeading(column) {
+    if (!["lookingFor", "buyPlan"].includes(column.key)) return column.label;
+    const field = column.key;
+    return (
+      <label className="column-filter">
+        <span>{column.label}</span>
+        <select
+          aria-label={`Filter by ${column.label}`}
+          value={columnFilters[field]}
+          onChange={(event) => setColumnFilters((current) => ({ ...current, [field]: event.target.value }))}
+        >
+          <option value="">All</option>
+          {columnFilterOptions[field].map((value) => <option key={value} value={value}>{value}</option>)}
+        </select>
+      </label>
+    );
+  }
+
   return (
     <section>
       {!embedded && <Header title={config.title} subtitle={config.subtitle || "Open a lead for the full timeline and details."} />}
@@ -731,14 +735,14 @@ function LeadList({ config, user, users, openLead, openWhatsApp, embedded = fals
           <thead>
             <tr>
               {columns.map((column) => (
-                <th key={column.key} className={column.className || ""}>{column.label}</th>
+                <th key={column.key} className={column.className || ""}>{renderColumnHeading(column)}</th>
               ))}
             </tr>
           </thead>
           <tbody>
             {loading ? (
               <tr><td colSpan={columns.length} className="empty">Loading leads...</td></tr>
-            ) : leads.map((lead) => (
+            ) : visibleLeads.map((lead) => (
               <tr key={lead.id}>
                 <td className="lead-col-name"><button className="row-link" onClick={() => openLead(lead.id)}>{lead.name}</button><small>{formatDate(lead.meta_created_at)}</small></td>
                 <td className="lead-col-phone"><a href={`tel:${lead.phone}`}>{lead.phone}</a></td>
@@ -783,7 +787,7 @@ function LeadList({ config, user, users, openLead, openWhatsApp, embedded = fals
                 </td>
               </tr>
             ))}
-            {!loading && leads.length === 0 && <tr><td colSpan={columns.length} className="empty">No leads found.</td></tr>}
+            {!loading && visibleLeads.length === 0 && <tr><td colSpan={columns.length} className="empty">No leads found.</td></tr>}
           </tbody>
         </table>
       </div>
@@ -791,6 +795,11 @@ function LeadList({ config, user, users, openLead, openWhatsApp, embedded = fals
       {assignmentLead && <AssignmentDialog lead={assignmentLead} users={users} onClose={() => setAssignmentLead(null)} onSubmit={(body) => mutate(assignmentLead.id, body).then(() => setAssignmentLead(null))} />}
     </section>
   );
+}
+
+function uniqueLeadValues(leads, field) {
+  return [...new Set(leads.map((lead) => String(lead[field] || "").trim()).filter(Boolean))]
+    .sort((left, right) => left.localeCompare(right, undefined, { sensitivity: "base" }));
 }
 
 function LeadDetail({ id, user, users, openWhatsApp, onBack }) {

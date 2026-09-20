@@ -303,6 +303,15 @@ export async function initDb() {
 
   }
 
+  await run(`CREATE TABLE IF NOT EXISTS sheet_column_mappings (
+    spreadsheet_id TEXT NOT NULL,
+    tab_id INTEGER NOT NULL,
+    mapping_json TEXT NOT NULL,
+    revision INTEGER NOT NULL,
+    updated_by INTEGER REFERENCES users(id),
+    updated_at TEXT NOT NULL,
+    PRIMARY KEY (spreadsheet_id, tab_id)
+  )`);
   await migrateSchema();
   await seedDb();
 }
@@ -409,7 +418,36 @@ function toPostgresQuery(sql, params = {}) {
   return { text, values };
 }
 
-export async function addActivity({ leadId, userId = null, activityType, oldValue = null, newValue = null, comment = null }) {
+export async function getSheetMapping(spreadsheetId, tabId) {
+  const row = await get(
+    "SELECT * FROM sheet_column_mappings WHERE spreadsheet_id = :spreadsheetId AND tab_id = :tabId",
+    { spreadsheetId, tabId }
+  );
+  return row ? { ...row, mapping: JSON.parse(row.mapping_json) } : null;
+}
+
+export async function saveSheetMapping({ spreadsheetId, tabId, mapping, revision, userId }) {
+  if (!Number.isSafeInteger(revision) || revision < 0) {
+    throw Object.assign(new Error("Invalid mapping revision."), { status: 400 });
+  }
+  const params = { spreadsheetId, tabId, mappingJson: JSON.stringify(mapping), revision,
+    nextRevision: revision + 1, userId, updatedAt: nowIso() };
+  // Compare-and-swap prevents one admin from overwriting another admin's edits.
+  const result = revision === 0
+    ? await run(`INSERT INTO sheet_column_mappings
+        (spreadsheet_id, tab_id, mapping_json, revision, updated_by, updated_at)
+        VALUES (:spreadsheetId, :tabId, :mappingJson, :nextRevision, :userId, :updatedAt)
+        ON CONFLICT (spreadsheet_id, tab_id) DO NOTHING`, params)
+    : await run(`UPDATE sheet_column_mappings SET mapping_json = :mappingJson,
+        revision = :nextRevision, updated_by = :userId, updated_at = :updatedAt
+        WHERE spreadsheet_id = :spreadsheetId AND tab_id = :tabId AND revision = :revision`, params);
+  if (!result.changes) {
+    throw Object.assign(new Error("Column mapping changed. Reload the mapping and try again."), { status: 409 });
+  }
+  return params.nextRevision;
+}
+
+export async function addActivity({ leadId, userId = null, activityType, oldValue = null, newValue = null, comment = null, preserveLastComment = false }) {
   const createdAt = nowIso();
   await run(
     `INSERT INTO lead_activities
@@ -422,7 +460,7 @@ export async function addActivity({ leadId, userId = null, activityType, oldValu
      SET last_activity_at = :createdAt,
          last_comment = COALESCE(:comment, last_comment)
      WHERE id = :leadId`,
-    { leadId, createdAt, comment }
+    { leadId, createdAt, comment: preserveLastComment ? null : comment }
   );
 }
 
@@ -745,7 +783,14 @@ export async function createLeadFromSource(source, userId = null) {
 
   const existing = await get("SELECT id FROM leads WHERE meta_lead_id = :metaLeadId", { metaLeadId: info.metaLeadId });
   if (existing?.id) {
-    const updated = await updateMissingLeadFields(existing.id, info, userId);
+    // Defaults are for new leads only; ignored or empty source cells must not enrich existing leads.
+    const enrichment = {
+      ...info,
+      name: source.name,
+      campaign: source.campaign || source.project,
+      metaCreatedAt: source.meta_created_at || source.metaCreatedAt
+    };
+    const updated = await updateMissingLeadFields(existing.id, enrichment, userId);
     return { created: false, updated, leadId: existing.id };
   }
 
@@ -756,15 +801,17 @@ async function updateMissingLeadFields(leadId, info, userId) {
   const lead = await get("SELECT * FROM leads WHERE id = :leadId", { leadId });
   if (!lead) return false;
 
+  const fill = (current, incoming, placeholder = "") =>
+    shouldFill(current, placeholder) && incoming != null && String(incoming).trim() !== "" ? incoming : current;
   const updates = {
     leadId,
-    name: shouldFill(lead.name, "Unknown Lead") ? info.name : lead.name,
-    phone: shouldFill(lead.phone) ? info.phone : lead.phone,
-    email: shouldFill(lead.email) ? info.email : lead.email,
-    campaign: shouldFill(lead.campaign, "Meta Campaign") ? info.campaign : lead.campaign,
-    lookingFor: shouldFill(lead.looking_for) ? info.lookingFor : lead.looking_for,
-    buyPlan: shouldFill(lead.buy_plan) ? info.buyPlan : lead.buy_plan,
-    metaCreatedAt: shouldFill(lead.meta_created_at) ? info.metaCreatedAt : lead.meta_created_at
+    name: fill(lead.name, info.name, "Unknown Lead"),
+    phone: fill(lead.phone, info.phone),
+    email: fill(lead.email, info.email),
+    campaign: fill(lead.campaign, info.campaign, "Meta Campaign"),
+    lookingFor: fill(lead.looking_for, info.lookingFor),
+    buyPlan: fill(lead.buy_plan, info.buyPlan),
+    metaCreatedAt: fill(lead.meta_created_at, info.metaCreatedAt)
   };
 
   const changed = updates.name !== lead.name ||
@@ -793,6 +840,7 @@ async function updateMissingLeadFields(leadId, info, userId) {
     leadId,
     userId,
     activityType: "Sync Updated",
+    preserveLastComment: true,
     comment: "Filled missing source fields from Google Sheet"
   });
   return true;

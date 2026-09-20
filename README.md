@@ -26,6 +26,8 @@ Existing legacy users are migrated to salted password hashes on startup. Passwor
 
 After login, an administrator can open **Users** to create sales, manager, or admin accounts, reset passwords, and activate/deactivate users. Administrators and managers can assign leads from the **Assign Lead** user list in lead tables or lead detail. Sales users only see leads assigned to their account and cannot assign leads.
 
+Every lead table includes unique-value dropdowns in the Looking For and Buy Plan column headings. They are available on New Leads, Follow-ups, Site Visits, Super Interested, every Missed tab, Rejected Leads, and All Leads. The two filters work independently or together and reset when the page or date view changes.
+
 ## Google Sheets Sync
 
 Copy `.env.example` to `.env` later and fill:
@@ -50,6 +52,16 @@ Expected sheet columns can use common names such as:
 - `when_you_are_planning_to_buy?` mapped to `buy_plan`
 
 The previous `what_are_you_looking_for?` header remains accepted as a transition fallback. `Buy Plan` also accepts the previous `when_are_you_planning_to_buy?` spelling.
+
+### Saved column mapping
+
+Administrators can expand **Column mapping** below **Sync Leads** on the dashboard. Load the current sheet headers, select a sheet column for each CRM source field, preview sample rows, and save. Saving does not import leads. Later syncs reuse the saved mapping; optional fields can be ignored, and automatic matching remains available.
+
+Mappings are stored in the application database per spreadsheet and numeric tab ID, survive deployments, and are shared between admins. The required Lead ID must identify a lead consistently across imports. Changing its mapped column can change which records are treated as new. Reordering uniquely named columns is supported; renamed or missing mapped headers must be corrected before syncing. Existing populated source values are not bulk-overwritten by remapping.
+
+To change the source sheet, update `GOOGLE_SHEET_ID` and/or `GOOGLE_WORKSHEET_NAME` in Render and redeploy. Share the new sheet with the existing service-account email. Open Column mapping for the new source and review its selections before syncing. Credentials stay in Render; no new environment variables are needed for mapping.
+
+The application creates the additive `sheet_column_mappings` settings table on startup, using the existing SQLite/PostgreSQL database. No lead-data migration is required. Do not remove this table when rolling back the application; older builds ignore it.
 
 ## Render Free Deployment
 
