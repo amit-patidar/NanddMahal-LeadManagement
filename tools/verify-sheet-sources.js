@@ -20,13 +20,17 @@ const fixtures = [
 let unavailable = false;
 const originalSheets = google.sheets;
 const calls = [];
-google.sheets = () => ({ spreadsheets: {
+google.sheets = (options) => {
+  assert.deepEqual(options.auth.scopes, ["https://www.googleapis.com/auth/spreadsheets.readonly"]);
+  return { spreadsheets: {
   get: async (input) => respond(input, false),
-  getByDataFilter: async (input) => respond(input, true)
-} });
+  getByDataFilter: async () => { throw new Error("Request had insufficient authentication scopes."); }
+} }; };
 function respond(input, numeric) {
   calls.push(input);
   if (unavailable && input.spreadsheetId === "first-sheet") throw new Error("fake secret provider URL");
+  if (!input.ranges) return { data: { sheets: fixtures.filter((item) => item.spreadsheetId === input.spreadsheetId)
+    .map((item) => ({ properties: { sheetId: item.tabId, title: item.title } })) } };
   const range = input.requestBody?.dataFilters[0]?.gridRange;
   const fixture = fixtures.find((item) => item.spreadsheetId === input.spreadsheetId
     && (numeric ? item.tabId === range.sheetId : input.ranges[0].startsWith(`'${item.title}'`)));
@@ -79,6 +83,22 @@ try {
   assert.equal(protectedLead.last_comment, "Keep me");
   fixtures[1].title = "Renamed tab";
   assert.equal((await (await sheetSources.mapping(second.id)).get()).source.title, "Renamed tab");
+  const { readGoogleSheet } = await import("../server/sheetsSync.js");
+  const requests = [];
+  const readOnlySheets = { spreadsheets: { get: async (input) => {
+    requests.push(input);
+    if (!input.ranges) return { data: { sheets: [{ properties: { sheetId: 7, title: "Renamed ' Leads" } }] } };
+    return { data: { sheets: [{ properties: { sheetId: 7, title: "Renamed ' Leads" }, data: [] }] } };
+  } } };
+  await readGoogleSheet({ source: second, sheets: readOnlySheets });
+  assert.deepEqual(requests[1].ranges, ["'Renamed '' Leads'!1:4"]);
+  requests.length = 0;
+  await readGoogleSheet({ source: second, full: true, sheets: readOnlySheets });
+  assert.deepEqual(requests[1].ranges, ["'Renamed '' Leads'"]);
+  await assert.rejects(readGoogleSheet({ source: second, sheets: { spreadsheets: { get: async (input) => ({ data: {
+    sheets: [{ properties: { sheetId: input.ranges ? 99 : 7, title: "Reused title" } }]
+  } }) } } }), { status: 409 }, "tab replacement between metadata and data must never import another tab");
+  console.log("PASS read-only OAuth scope, GET-only pinned tab reads, escaped preview/full ranges and tab identity race rejection");
   unavailable = true;
   const partial = await sheetSources.sync(admin.id);
   assert.equal(partial.failedSources, 1);
@@ -113,6 +133,8 @@ try {
     return { status: response.status, body: await response.json(), cookie: response.headers.get("set-cookie")?.split(";")[0] };
   }
   const login = await request("/api/auth/login", "POST", { identifier: process.env.INITIAL_ADMIN_EMAIL, password: process.env.INITIAL_ADMIN_PASSWORD });
+  process.env.RENDER_GIT_COMMIT = "qa-commit";
+  assert.deepEqual((await request("/api/health")).body, { ok: true, commit: "qa-commit" });
   assert.equal(login.status, 200);
   const routes = [["/api/sync/sources", "GET"], ["/api/sync/sources", "POST"], [`/api/sync/sources/${second.id}`, "PATCH"],
     [`/api/sync/mapping?sourceId=${second.id}`, "GET"], [`/api/sync/mapping?sourceId=${second.id}`, "PUT"],

@@ -44,27 +44,32 @@ function mappingError(status, message, response) {
 
 export async function readGoogleSheet({ full = false, sheets: injectedSheets, source } = {}) {
   const spreadsheetId = source?.spreadsheetId || process.env.GOOGLE_SHEET_ID;
-  const title = source?.title || process.env.GOOGLE_WORKSHEET_NAME || "Nandd Mahal Leads";
+  let title = source?.title || process.env.GOOGLE_WORKSHEET_NAME || "Nandd Mahal Leads";
   const authConfig = injectedSheets ? null : googleAuthConfig();
   if (!spreadsheetId || (!injectedSheets && !authConfig)) {
     throw Object.assign(mappingError(503, "Google Sheets sync is not configured."), { configured: false });
   }
   const sheets = injectedSheets || google.sheets({ version: "v4", auth: new google.auth.GoogleAuth(authConfig) });
-  // Identity and formatted cells come from the same response, avoiding a tab-rename race.
+  // getByDataFilter does not accept spreadsheets.readonly. Resolve the stable tab ID
+  // using read-only metadata, then validate identity again with the returned cells.
+  if (Number.isSafeInteger(source?.tabId)) {
+    const metadata = await sheets.spreadsheets.get({ spreadsheetId, fields: "sheets(properties(sheetId,title))" });
+    const tab = metadata.data.sheets?.find((entry) => entry.properties.sheetId === source.tabId);
+    if (!tab) throw mappingError(400, "Configured Google Sheet tab was not found.");
+    title = tab.properties.title;
+  }
   const responseFields = "properties(locale),sheets(properties(sheetId,title),data(rowData(values(formattedValue))))";
-  const result = Number.isSafeInteger(source?.tabId)
-    ? await sheets.spreadsheets.getByDataFilter({
-      spreadsheetId, fields: responseFields,
-      requestBody: { dataFilters: [{ gridRange: { sheetId: source.tabId, startRowIndex: 0, ...(!full ? { endRowIndex: 4 } : {}) } }] }
-    })
-    : await sheets.spreadsheets.get({
+  const result = await sheets.spreadsheets.get({
     spreadsheetId,
     ranges: [`'${title.replace(/'/g, "''")}'${full ? "" : "!1:4"}`],
     fields: responseFields
   });
   const sheet = result.data.sheets?.find((entry) => Number.isSafeInteger(source?.tabId)
     ? entry.properties.sheetId === source.tabId : entry.properties.title === title);
-  if (!sheet) throw mappingError(400, "Configured Google Sheet tab was not found.");
+  if (!sheet) {
+    if (Number.isSafeInteger(source?.tabId)) throw mappingError(409, "Google Sheet tab changed while reading. Refresh headers and retry.");
+    throw mappingError(400, "Configured Google Sheet tab was not found.");
+  }
   const tab = sheet.properties;
   return {
     source: { spreadsheetId, tabId: tab.sheetId, title: tab.title },

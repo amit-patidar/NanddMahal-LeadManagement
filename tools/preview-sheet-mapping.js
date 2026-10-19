@@ -29,6 +29,9 @@ const fixtures = [
   ] }
 ];
 const fixtureResponse = async (input) => {
+  if (!input.ranges && !input.requestBody) return { data: { sheets: fixtures
+    .filter((item) => item.spreadsheetId === input.spreadsheetId)
+    .map((item) => ({ properties: { sheetId: item.tabId, title: item.title } })) } };
   const grid = input.requestBody?.dataFilters?.[0]?.gridRange;
   const fixture = fixtures.find((item) => item.spreadsheetId === input.spreadsheetId
     && (grid ? grid.sheetId === item.tabId : input.ranges?.[0]?.startsWith(`'${item.title}'`)));

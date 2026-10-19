@@ -62,7 +62,7 @@ export const server = http.createServer(async (req, res) => {
     }
 
     if (req.method === "GET" && url.pathname === "/api/health") {
-      return json(res, 200, { ok: true });
+      return json(res, 200, { ok: true, commit: process.env.RENDER_GIT_COMMIT || null });
     }
 
     if (req.method === "GET" && url.pathname === "/api/webhooks/whatsapp/meta") {

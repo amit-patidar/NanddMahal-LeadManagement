@@ -1,5 +1,12 @@
 # Production Changes Log
 
+## 2026-10-19: Read-only sheet sync hotfix preparation
+
+- Target: existing production app and GitHub main, following the user's live sync failure report. Prior main: `8a27971a3892ddaed3cec535ec3f8f73fc67a759`; public health was healthy, frontend asset `/assets/index-DiWrajwn.js`.
+- Cause/correction: the pinned-tab API did not accept the app's read-only OAuth scope. Replace it with metadata/data GETs supporting the existing scope, with numeric tab identity checked before returning rows. Add the deployed commit to public health for backend release verification. Details/tests: `audit/task-history/T-014.md`.
+- No credential, source, mapping, or lead-data changes. Rollback: redeploy the prior main commit; no schema rollback, although the prior commit restores the reported sync issue.
+- Push/deployment observation will be appended after verification. Authenticated production sync requires user confirmation after deployment.
+
 ## 2026-10-19: Multi-sheet release
 
 - Authorized target: `amit-patidar/NanddMahal-LeadManagement`, branch `main`; public production app `https://nanddmahal-leadmanagement.onrender.com` from README. User explicitly requested pushing main for live testing.
