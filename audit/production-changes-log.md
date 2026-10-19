@@ -1,11 +1,11 @@
 # Production Changes Log
 
-## 2026-10-19: Read-only sheet sync hotfix preparation
+## 2026-10-19: Read-only sheet sync hotfix
 
 - Target: existing production app and GitHub main, following the user's live sync failure report. Prior main: `8a27971a3892ddaed3cec535ec3f8f73fc67a759`; public health was healthy, frontend asset `/assets/index-DiWrajwn.js`.
 - Cause/correction: the pinned-tab API did not accept the app's read-only OAuth scope. Replace it with metadata/data GETs supporting the existing scope, with numeric tab identity checked before returning rows. Add the deployed commit to public health for backend release verification. Details/tests: `audit/task-history/T-014.md`.
 - No credential, source, mapping, or lead-data changes. Rollback: redeploy the prior main commit; no schema rollback, although the prior commit restores the reported sync issue.
-- Push/deployment observation will be appended after verification. Authenticated production sync requires user confirmation after deployment.
+- Pushed hotfix `b4336f0fe3172634dbfd574f62a22a0ae1ddb306` to main. Production `/api/health` subsequently returned `{"ok":true,"commit":"b4336f0fe3172634dbfd574f62a22a0ae1ddb306"}`, confirming the corrected backend is live. Authenticated production sync remains pending user retry; no sheet connection, sync, or credential change was performed by the assistant.
 
 ## 2026-10-19: Multi-sheet release
 
