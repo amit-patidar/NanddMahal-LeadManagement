@@ -1,5 +1,13 @@
 # Production Changes Log
 
+## 2026-10-19: Multi-sheet release preparation
+
+- Authorized target: `amit-patidar/NanddMahal-LeadManagement`, branch `main`; public production app `https://nanddmahal-leadmanagement.onrender.com` from README. User explicitly requested pushing main for live testing.
+- Before push: local and live GitHub main matched `4b648eb506fb1c7adc839098e96fa817b6609825`. Public app root returned HTTP 200, health returned `{"ok":true}`, and its JavaScript asset was `/assets/index-DCHlHoMz.js`. No Render dashboard/deploy ID or production database credentials were available for inspection.
+- Prepared change: multiple source settings, per-tab mapping, and aggregate manual sync, with the build/API/browser verification recorded in `audit/task-history/T-013.md`. Startup adds `sheet_sync_sources` and adopts the legacy environment source; it does not import leads. No secrets or environment-variable changes are included.
+- Rollback reference: the pre-release main commit above. Redeploy that commit or revert this feature commit through normal Git history. Leave additive source/mapping tables intact. Older code resumes the environment-configured single source. Existing imported leads are retained; any later lead-data restoration requires a separate verified backup.
+- Push and deployment outcome: pending execution; append observed results after verification. Live authenticated mapping/import tests remain unverified until performed in the production app.
+
 No production system was changed by the project-control bootstrap on 2026-08-17. The change only adds repository documentation and tracking structure.
 
 For a future live change, record the target, current state, commit or configuration reference, verification result, and rollback steps here before closing the task.

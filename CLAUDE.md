@@ -24,7 +24,7 @@ Current stack:
 - Cloudinary media storage in `server/cloudinaryMedia.js`.
 - Authentication uses salted `crypto.scrypt` password hashes, a server-side `sessions` table, and an HTTP-only session cookie. Admins manage users; admins and managers manage lead assignments; sales users are server-scoped to assigned leads.
 
-The active development branch is `feature/sheet-column-mapping`. The GitHub repository and deployment instructions are in `README.md`; secret values belong only in local or Render environment variables.
+The integration branch is `main`. The GitHub repository and deployment instructions are in `README.md`; secret values belong only in local or Render environment variables.
 
 ## Working rules
 
@@ -40,9 +40,9 @@ The active development branch is `feature/sheet-column-mapping`. The GitHub repo
 
 ## Current data rules
 
-- The primary lead import is the `Nandd Mahal Leads` Google Sheet tab.
+- Google Sheet sources are stored in the database. On upgrade, the environment-configured `Nandd Mahal Leads` source is adopted once; admins can connect additional spreadsheets/tabs and enable or disable each source.
 - Sync is currently manual through `POST /api/sync`; `SYNC_INTERVAL_MINUTES` is documented but not used by the server.
-- Admins configure optional saved source-column mappings below Sync Leads. Mappings are database settings per spreadsheet/numeric tab ID; source selection and Google credentials remain environment-configured. Keep normal sync separate from mapping preview/save, and preserve global stable lead IDs and CRM-managed data.
+- Admins configure sources and optional saved column mappings below Sync Leads. Mappings are database settings per spreadsheet/numeric tab ID; Google credentials remain environment-configured. Manual sync imports all enabled sources and reports each result independently. Keep normal sync separate from connecting sources and mapping preview/save, and preserve global stable lead IDs and CRM-managed data.
 - Existing CRM status, comments, follow-up data, site-visit data, and rejection data must not be overwritten by normal sync.
 - Historical comment imports and sheet-to-status moves were one-time migrations, not recurring sync behavior.
 - Authenticated teammates can add manual side leads directly. Manual leads use server-generated `manual:<uuid>` source IDs and are not overwritten or deleted by Google Sheet sync.

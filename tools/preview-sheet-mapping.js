@@ -19,12 +19,30 @@ const rows = [
   ["demo-001", "Sample Buyer", "9000000001", "80 lakh", "Within 3 months"],
   ["demo-002", "Sample Visitor", "9000000002", "1 crore", "Immediately"]
 ];
+const fixtures = [
+  { spreadsheetId: "demo-sheet", tabId: 1, title: "Demo Leads", rows },
+  { spreadsheetId: "demo-campaign", tabId: 7, title: "Campaign Leads", rows: [
+    ["Lead ID", "Customer Name", "Mobile", "Price Range", "Buy Plan"],
+    ["demo-003", "Campaign Buyer", "9000000003", "90 lakh", "Next month"],
+    ["demo-004", "Campaign Visitor", "9000000004", "1.2 crore", "Within 6 months"],
+    ["demo-001", "Sample Buyer", "9000000001", "80 lakh", "Within 3 months"]
+  ] }
+];
+const fixtureResponse = async (input) => {
+  const grid = input.requestBody?.dataFilters?.[0]?.gridRange;
+  const fixture = fixtures.find((item) => item.spreadsheetId === input.spreadsheetId
+    && (grid ? grid.sheetId === item.tabId : input.ranges?.[0]?.startsWith(`'${item.title}'`)));
+  if (!fixture) throw new Error("Demo sheet not found. Use demo-sheet / Demo Leads or demo-campaign / Campaign Leads.");
+  const bounded = grid ? grid.endRowIndex === 4 : input.ranges[0].endsWith("!1:4");
+  return { data: { properties: { locale: "en_IN" }, sheets: [{
+    properties: { sheetId: fixture.tabId, title: fixture.title },
+    data: [{ rowData: (bounded ? fixture.rows.slice(0, 4) : fixture.rows)
+      .map((row) => ({ values: row.map((formattedValue) => ({ formattedValue })) })) }]
+  }] } };
+};
 google.sheets = () => ({ spreadsheets: {
-  get: async () => ({ data: { properties: { locale: "en_IN" }, sheets: [{
-    properties: { sheetId: 1, title: "Demo Leads" },
-    data: [{ rowData: rows.map((row) => ({ values: row.map((formattedValue) => ({ formattedValue })) })) }]
-  }] } }),
-  values: { get: async () => ({ data: { values: rows } }) }
+  get: fixtureResponse,
+  getByDataFilter: fixtureResponse
 } });
 const { server } = await import("../server/server.js");
 const { db } = await import("../server/db.js");

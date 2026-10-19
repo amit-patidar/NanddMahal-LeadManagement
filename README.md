@@ -38,7 +38,17 @@ GOOGLE_WORKSHEET_NAME=Nandd Mahal Leads
 GOOGLE_APPLICATION_CREDENTIALS=C:\path\to\service-account.json
 ```
 
-The manual **Sync Leads** button imports rows whose Meta Lead ID is not already present. Existing CRM status, comments, follow-ups, rejected status, and site visits are never overwritten by sync.
+The manual **Sync Leads** button imports from all enabled sheet sources. New Meta Lead IDs create leads; existing leads can have blank source fields filled. Existing CRM status, comments, assignments, follow-ups, rejected status, and site visits are never overwritten by sync.
+
+### Multiple sheet sources
+
+Administrators can open **Sheet sources & column mapping** below **Sync Leads** on the dashboard. Enter a source name, Google Sheets URL or spreadsheet ID, and the tab name, then select **Connect sheet**. A URL containing `gid` can select the tab without a name; an entered tab name takes precedence. Multiple tabs from one spreadsheet and tabs from different spreadsheets are supported. Share every spreadsheet with the same configured Google service account before connecting it.
+
+Connecting verifies access and reads sample rows without importing leads. Use **Map** beside a source to review its own column mapping. Each source can be disabled or enabled; disabling it retains imported leads and mapping settings. Sync reports per-source counts and errors, continuing with other sources if one fails. A running sync uses the enabled-source list captured at its start.
+
+Lead IDs remain global across all sources: the same ID refers to the same CRM lead, even when it appears in multiple sheets. Use stable, globally unique IDs for different leads. Existing populated source values are preserved; enabled sources are processed in creation order (then source ID), and the first available value fills a blank field.
+
+Sources are stored in the existing application database in the additive `sheet_sync_sources` table. The previous environment-configured source is adopted once at startup without importing any leads. Its numeric tab ID is pinned on its first successful read; newly connected tabs are pinned immediately, so later tab renames retain the same mapping. After adoption, manage sources in the CRM; changing the legacy environment variables does not replace the saved source. Credentials remain in environment variables. A fresh deployment without `GOOGLE_SHEET_ID` can connect its first source through the CRM once Google credentials are configured.
 
 Expected sheet columns can use common names such as:
 
@@ -55,11 +65,11 @@ The previous `what_are_you_looking_for?` header remains accepted as a transition
 
 ### Saved column mapping
 
-Administrators can expand **Column mapping** below **Sync Leads** on the dashboard. Load the current sheet headers, select a sheet column for each CRM source field, preview sample rows, and save. Saving does not import leads. Later syncs reuse the saved mapping; optional fields can be ignored, and automatic matching remains available.
+Administrators can expand **Sheet sources & column mapping** below **Sync Leads** on the dashboard. Select **Map** beside a source, select a sheet column for each CRM source field, preview sample rows, and save. Saving does not import leads. Later syncs reuse that source's saved mapping; optional fields can be ignored, and automatic matching remains available.
 
 Mappings are stored in the application database per spreadsheet and numeric tab ID, survive deployments, and are shared between admins. The required Lead ID must identify a lead consistently across imports. Changing its mapped column can change which records are treated as new. Reordering uniquely named columns is supported; renamed or missing mapped headers must be corrected before syncing. Existing populated source values are not bulk-overwritten by remapping.
 
-To change the source sheet, update `GOOGLE_SHEET_ID` and/or `GOOGLE_WORKSHEET_NAME` in Render and redeploy. Share the new sheet with the existing service-account email. Open Column mapping for the new source and review its selections before syncing. Credentials stay in Render; no new environment variables are needed for mapping.
+To change sources, connect the new spreadsheet/tab in the CRM and disable the old source if it should stop importing. Review the new source's column mapping before syncing. Credentials stay in Render; no new environment variables are needed for additional sources.
 
 The application creates the additive `sheet_column_mappings` settings table on startup, using the existing SQLite/PostgreSQL database. No lead-data migration is required. Do not remove this table when rolling back the application; older builds ignore it.
 

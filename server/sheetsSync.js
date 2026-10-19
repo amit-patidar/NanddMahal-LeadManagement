@@ -42,21 +42,28 @@ function mappingError(status, message, response) {
   return Object.assign(new Error(message), { status, mappingResponse: response });
 }
 
-export async function readGoogleSheet({ full = false, sheets: injectedSheets } = {}) {
-  const spreadsheetId = process.env.GOOGLE_SHEET_ID;
-  const title = process.env.GOOGLE_WORKSHEET_NAME || "Nandd Mahal Leads";
+export async function readGoogleSheet({ full = false, sheets: injectedSheets, source } = {}) {
+  const spreadsheetId = source?.spreadsheetId || process.env.GOOGLE_SHEET_ID;
+  const title = source?.title || process.env.GOOGLE_WORKSHEET_NAME || "Nandd Mahal Leads";
   const authConfig = injectedSheets ? null : googleAuthConfig();
   if (!spreadsheetId || (!injectedSheets && !authConfig)) {
     throw Object.assign(mappingError(503, "Google Sheets sync is not configured."), { configured: false });
   }
   const sheets = injectedSheets || google.sheets({ version: "v4", auth: new google.auth.GoogleAuth(authConfig) });
   // Identity and formatted cells come from the same response, avoiding a tab-rename race.
-  const result = await sheets.spreadsheets.get({
+  const responseFields = "properties(locale),sheets(properties(sheetId,title),data(rowData(values(formattedValue))))";
+  const result = Number.isSafeInteger(source?.tabId)
+    ? await sheets.spreadsheets.getByDataFilter({
+      spreadsheetId, fields: responseFields,
+      requestBody: { dataFilters: [{ gridRange: { sheetId: source.tabId, startRowIndex: 0, ...(!full ? { endRowIndex: 4 } : {}) } }] }
+    })
+    : await sheets.spreadsheets.get({
     spreadsheetId,
     ranges: [`'${title.replace(/'/g, "''")}'${full ? "" : "!1:4"}`],
-    fields: "properties(locale),sheets(properties(sheetId,title),data(rowData(values(formattedValue))))"
+    fields: responseFields
   });
-  const sheet = result.data.sheets?.find((entry) => entry.properties.title === title);
+  const sheet = result.data.sheets?.find((entry) => Number.isSafeInteger(source?.tabId)
+    ? entry.properties.sheetId === source.tabId : entry.properties.title === title);
   if (!sheet) throw mappingError(400, "Configured Google Sheet tab was not found.");
   const tab = sheet.properties;
   return {
@@ -185,7 +192,7 @@ export function createSheetMappingService(dependencies = {}) {
   const importLead = dependencies.createLeadFromSource || (async (...args) => (await import("./db.js")).createLeadFromSource(...args));
 
   async function snapshot(full = false) {
-    const sheet = await readSheet({ full });
+    const sheet = await readSheet({ full, ...(dependencies.source ? { source: dependencies.source } : {}) });
     const saved = await getMapping(sheet.source.spreadsheetId, sheet.source.tabId);
     return { ...sheet, saved: saved ? structuredClone(saved) : null, headers: (sheet.rows[0] || []).map((header) => String(header ?? "")) };
   }

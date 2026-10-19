@@ -38,6 +38,7 @@ try {
     if (url.pathname === "/api/auth/me") result = { user: user() };
     else if (url.pathname === "/api/users") result = [user()];
     else if (url.pathname === "/api/dashboard") result = { newLeads: 2 };
+    else if (url.pathname === "/api/sync/sources") result = { sources: [{ id: "environment", label: "QA Leads", ...source, enabled: true }] };
     else if (url.pathname === "/api/sync") { syncs++; result = { message: "Sync complete. Created 0, updated 0, skipped 2." }; }
     else if (url.pathname === "/api/sync/mapping/preview") { previews++; result = response(req.postDataJSON().mapping); }
     else if (url.pathname === "/api/sync/mapping" && req.method() === "PUT") {
@@ -48,14 +49,14 @@ try {
     await route.fulfill({ status, contentType: "application/json", body: JSON.stringify(result) });
   });
   await page.goto("http://127.0.0.1:5182");
-  const expand = page.getByRole("button", { name: "Column mapping", exact: true });
+  const expand = page.getByRole("button", { name: "Sheet sources & column mapping", exact: true });
   await expand.click();
   const budget = page.getByLabel("Budget / Looking For", { exact: true });
   await budget.waitFor();
   await budget.selectOption({ label: "New budget question" });
   assert.equal(await page.getByRole("button", { name: "Sync Leads", exact: true }).isDisabled(), true);
   await Promise.all([
-    page.waitForResponse((r) => r.url().endsWith("/sync/mapping/preview")),
+    page.waitForResponse((r) => new URL(r.url()).pathname === "/api/sync/mapping/preview"),
     page.getByRole("button", { name: "Preview", exact: true }).click()
   ]);
   await page.getByText("Preview validated.", { exact: true }).waitFor();
@@ -90,11 +91,12 @@ try {
   assert.equal(syncs, 1);
   await fs.mkdir("audit/screenshots", { recursive: true });
   await page.evaluate(() => window.scrollTo(0, 0));
-  await page.screenshot({ path: "audit/screenshots/T-011-mapping-desktop.png", fullPage: true });
+  const screenshotPrefix = process.env.MAPPING_QA_SCREENSHOT_PREFIX || "audit/screenshots/T-011-mapping";
+  await page.screenshot({ path: `${screenshotPrefix}-desktop.png`, fullPage: true });
   await page.setViewportSize({ width: 390, height: 844 });
   await page.evaluate(() => window.scrollTo(0, 0));
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true, "no mobile horizontal overflow");
-  await page.screenshot({ path: "audit/screenshots/T-011-mapping-mobile.png", fullPage: true });
+  await page.screenshot({ path: `${screenshotPrefix}-mobile.png`, fullPage: true });
   headers = headers.filter((header) => header !== "New budget question");
   await page.reload();
   await expand.click();

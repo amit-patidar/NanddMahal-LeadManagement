@@ -314,6 +314,26 @@ export async function initDb() {
   )`);
   await migrateSchema();
   await seedDb();
+  await run(`CREATE TABLE IF NOT EXISTS sheet_sync_sources (
+    id TEXT PRIMARY KEY,
+    label TEXT NOT NULL,
+    spreadsheet_id TEXT NOT NULL,
+    tab_id INTEGER,
+    title TEXT NOT NULL,
+    enabled INTEGER NOT NULL DEFAULT 1,
+    created_by INTEGER REFERENCES users(id),
+    created_at TEXT NOT NULL,
+    UNIQUE (spreadsheet_id, tab_id)
+  )`);
+  if (process.env.GOOGLE_SHEET_ID) {
+    await run(`INSERT INTO sheet_sync_sources
+      (id, label, spreadsheet_id, title, enabled, created_at)
+      VALUES ('environment', :title, :spreadsheetId, :title, 1, :createdAt)
+      ON CONFLICT (id) DO NOTHING`, {
+      title: process.env.GOOGLE_WORKSHEET_NAME || "Nandd Mahal Leads",
+      spreadsheetId: process.env.GOOGLE_SHEET_ID, createdAt: nowIso()
+    });
+  }
 }
 
 async function migrateSchema() {

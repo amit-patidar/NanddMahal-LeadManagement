@@ -36,3 +36,4 @@ Lanes are `Now`, `Waiting`, and `Upcoming`. Completed rows remain marked `Done` 
 | T-010 | Done | Add direct manual lead entry for authenticated teammates | [history](audit/task-history/T-010.md) |
 | T-011 | Done | Add saved Google Sheet column mapping with admin controls, validation, preview, and QA | [history](audit/task-history/T-011.md) |
 | T-012 | Done | Add Looking For and Buy Plan header filters to every lead table | [history](audit/task-history/T-012.md) |
+| T-013 | Done | Add multiple Google Sheet sources with per-tab mapping and combined manual sync; local checks passed | [history](audit/task-history/T-013.md) |

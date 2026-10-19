@@ -8,7 +8,7 @@ This file lists systems, environment-variable names, and the registry for risky 
 | --- | --- | --- |
 | Local SQLite | Local development database | `DATABASE_PATH` in local `.env` |
 | Render PostgreSQL | Shared deployed database | `DATABASE_URL` in Render environment variables |
-| Google Sheets | Lead import source | `GOOGLE_SHEET_ID`, `GOOGLE_WORKSHEET_NAME`, and Google service-account variables |
+| Google Sheets | Multiple lead import sources | Database `sheet_sync_sources`; Google service-account variables; `GOOGLE_SHEET_ID`/`GOOGLE_WORKSHEET_NAME` bootstrap the first source once |
 | Meta WhatsApp Cloud API | WhatsApp templates, messages, and webhooks | `WHATSAPP_*` variables in Render environment variables |
 | Cloudinary | Reusable WhatsApp header images | `CLOUDINARY_*` variables in Render environment variables |
 | GitHub | Source repository and deployment trigger | Repository URL in `README.md` |

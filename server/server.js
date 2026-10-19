@@ -30,7 +30,7 @@ import {
   setSessionCookie
 } from "./auth.js";
 import { hashPassword } from "./passwords.js";
-import { syncGoogleSheet, getGoogleSheetMapping, previewGoogleSheetMapping, saveGoogleSheetMapping } from "./sheetsSync.js";
+import { sheetSources } from "./sheetSources.js";
 import { cloudinaryStatus, listWhatsAppMedia, uploadWhatsAppMedia } from "./cloudinaryMedia.js";
 import { verifyMetaChallenge, verifyMetaSignature } from "./whatsappProvider.js";
 import { parseMetaWebhook } from "./whatsappWebhook.js";
@@ -237,22 +237,33 @@ export const server = http.createServer(async (req, res) => {
       return json(res, 200, await updateLead(id, body, user));
     }
 
+    if (url.pathname === "/api/sync/sources") {
+      requireAdmin(user);
+      if (req.method === "GET") return json(res, 200, { sources: await sheetSources.list() });
+      if (req.method === "POST") return json(res, 201, { source: await sheetSources.add(await readJson(req), user.id) });
+    }
+    const sourceMatch = url.pathname.match(/^\/api\/sync\/sources\/([\w-]+)$/);
+    if (sourceMatch && req.method === "PATCH") {
+      requireAdmin(user);
+      return json(res, 200, { source: await sheetSources.update(sourceMatch[1], await readJson(req)) });
+    }
     if (url.pathname === "/api/sync/mapping" || url.pathname === "/api/sync/mapping/preview") {
       requireAdmin(user);
+      const mapping = await sheetSources.mapping(url.searchParams.get("sourceId"));
       if (req.method === "GET" && url.pathname === "/api/sync/mapping") {
-        return json(res, 200, await getGoogleSheetMapping());
+        return json(res, 200, await mapping.get());
       }
       if (req.method === "PUT" && url.pathname === "/api/sync/mapping") {
-        return json(res, 200, await saveGoogleSheetMapping(await readJson(req), user.id));
+        return json(res, 200, await mapping.save(await readJson(req), user.id));
       }
       if (req.method === "POST" && url.pathname === "/api/sync/mapping/preview") {
-        return json(res, 200, await previewGoogleSheetMapping(await readJson(req)));
+        return json(res, 200, await mapping.preview(await readJson(req)));
       }
     }
 
     if (req.method === "POST" && url.pathname === "/api/sync") {
       requireAdmin(user);
-      const result = await syncGoogleSheet(user.id);
+      const result = await sheetSources.sync(user.id);
       return json(res, 200, result);
     }
 
