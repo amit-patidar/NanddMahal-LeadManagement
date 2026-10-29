@@ -1,5 +1,12 @@
 # Production Changes Log
 
+## 2026-10-29: CRM logo and app icons
+
+- User confirmed the local preview and authorized pushing to `amit-patidar/NanddMahal-LeadManagement` main. Pre-release local main and production health commit: `63a0e7ddd463b858c5eed42fcb638824b4edf2d9`; public root served `/assets/index-DiWrajwn.js` without favicon links. Public baseline captured outside the repository in temporary `nandd-icon-predeploy.json`.
+- Change: supplied logo on login/sidebar, favicon and Apple touch links, app manifest and PNG assets, and manifest MIME handling. Production build passed; user confirmed preview. No data or environment changes.
+- Rollback: revert the icon release commit or redeploy the prior commit above. No database rollback needed.
+- Push and live release verification will be reported after execution; Render build logs and deployment ID are not inspected.
+
 ## 2026-10-19: Read-only sheet sync hotfix
 
 - Target: existing production app and GitHub main, following the user's live sync failure report. Prior main: `8a27971a3892ddaed3cec535ec3f8f73fc67a759`; public health was healthy, frontend asset `/assets/index-DiWrajwn.js`.

@@ -28,6 +28,7 @@ Lanes are `Now`, `Waiting`, and `Upcoming`. Completed rows remain marked `Done` 
 
 | ID | Status | Task | Detail |
 | --- | --- | --- | --- |
+| T-015 | Done | Use supplied logo for CRM branding, browser tabs, and home-screen icons; local build passed | [history](audit/task-history/T-015.md) |
 | T-001 | Done | Establish the canonical AI-assisted project control system | [history](audit/task-history/T-001.md) |
 | T-004 | Done | Add comment-aware lead search | [history](audit/task-history/T-004.md) |
 | T-002 | Done | Add password hashing and migration foundation | [history](audit/task-history/T-002.md) |

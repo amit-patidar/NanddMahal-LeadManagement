@@ -78,7 +78,7 @@ function App() {
     <div className="app">
       <aside className="sidebar">
         <div className="brand">
-          <span className="brand-mark">NM</span>
+          <img className="brand-mark" src="/nandd-mahal-192.png" alt="Nandd Mahal logo" width="48" height="48" />
           <div>
             <strong>Nandd Mahal</strong>
             <small>Lead CRM</small>
@@ -265,7 +265,7 @@ function Login({ onLogin }) {
     <div className="login-shell">
       <form className="login-card" onSubmit={submit}>
         <div className="brand login-brand">
-          <span className="brand-mark">NM</span>
+          <img className="brand-mark" src="/nandd-mahal-192.png" alt="Nandd Mahal logo" width="48" height="48" />
           <div>
             <strong>Nandd Mahal Leads</strong>
             <small>Private sales CRM</small>
